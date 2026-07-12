@@ -1,0 +1,7 @@
+Artificial intelligence is transforming the world.
+AethyxLM is a language model built from scratch.
+Machine learning enables computers to learn from data.
+Deep learning powers modern AI.
+Transformers are powerful neural networks.
+The quick brown fox jumps over the lazy dog.
+Hello world.
