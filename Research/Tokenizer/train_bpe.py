@@ -1,4 +1,4 @@
-from bpe_trainer import BPETrainer
+from Research.Tokenizer.bpe_trainer import BPETrainer
 
 
 text = """

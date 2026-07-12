@@ -1,4 +1,4 @@
-from tokenizer import AethyxTokenizer
+from Research.Tokenizer.tokenizer import AethyxTokenizer
 
 
 training_text = """
