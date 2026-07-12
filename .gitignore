@@ -1,0 +1,29 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# VS Code
+.vscode/
+
+# Logs
+logs/
+
+# Model files
+checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Dataset cache
+.cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store
