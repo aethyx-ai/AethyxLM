@@ -2,7 +2,7 @@
 AethyxLM Tokenizer Test
 """
 
-from tokenizer import AethyxTokenizer
+from .tokenizer import AethyxTokenizer
 
 
 def main():
