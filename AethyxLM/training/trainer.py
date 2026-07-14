@@ -150,7 +150,11 @@ class Trainer:
             input_ids = input_ids.to(self.device)
             targets = targets.to(self.device)
             
-            with autocast(device_type=self.device, enabled=self.use_amp):
+            if self.use_amp:
+                with autocast():
+                    logits = self.model(input_ids)
+                    loss = self.criterion(logits, targets)
+            else:
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
             

@@ -4,9 +4,13 @@ Tests for training components.
 
 import os
 import tempfile
+import warnings
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
+
+# Suppress PyTorch LR scheduler warning in tests
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.optim.lr_scheduler")
 
 from model.gpt import GPT
 from model.config import VOCAB_SIZE, CONTEXT_LENGTH, EMBED_DIM, NUM_LAYERS

@@ -55,7 +55,7 @@ def main():
     print()
 
     print("=" * 60)
-    print("✓ GPT Model passed.")
+    print("[OK] GPT Model passed.")
     print("=" * 60)
 
 
