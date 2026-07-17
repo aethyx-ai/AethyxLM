@@ -27,3 +27,6 @@ checkpoints/
 # OS
 Thumbs.db
 .DS_Store
+
+#Archives
+*.zip
