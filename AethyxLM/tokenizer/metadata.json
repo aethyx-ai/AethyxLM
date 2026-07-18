@@ -1,0 +1,41 @@
+{
+  "vocab_size": 32000,
+  "tokenizer_type": "BPE",
+  "special_tokens": [
+    "<PAD>",
+    "<UNK>",
+    "<BOS>",
+    "<EOS>"
+  ],
+  "normalizer": {
+    "type": "Sequence",
+    "components": [
+      {
+        "type": "NFD"
+      },
+      {
+        "type": "Lowercase"
+      },
+      {
+        "type": "StripAccents"
+      }
+    ]
+  },
+  "pre_tokenizer": {
+    "type": "ByteLevel"
+  },
+  "trainer": {
+    "type": "BpeTrainer",
+    "vocab_size": 32000,
+    "min_frequency": 2,
+    "special_tokens": [
+      "<PAD>",
+      "<UNK>",
+      "<BOS>",
+      "<EOS>"
+    ]
+  },
+  "timestamp": "2026-07-18 00:54:15",
+  "dataset_used": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\data\\corpus.txt",
+  "corpus_size_bytes": 77297
+}

@@ -4,7 +4,10 @@ AethyxLM - Main Training Entry Point
 
 import json
 import argparse
+import subprocess
+import platform
 from pathlib import Path
+from datetime import datetime
 
 import torch
 from torch.utils.data import DataLoader
@@ -23,6 +26,75 @@ def load_config(config_path: str) -> dict:
     """Load training configuration from JSON file."""
     with open(config_path, 'r') as f:
         return json.load(f)
+
+
+def get_git_commit_hash() -> str:
+    """Get current git commit hash if available."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:8]
+    except Exception:
+        pass
+    return "unknown"
+
+
+def get_cuda_version() -> str:
+    """Get CUDA version if available."""
+    if torch.cuda.is_available():
+        return torch.version.cuda
+    return "N/A"
+
+
+def get_pytorch_version() -> str:
+    """Get PyTorch version."""
+    return torch.__version__
+
+
+def get_cudnn_version() -> str:
+    """Get cuDNN version."""
+    if torch.cuda.is_available():
+        return str(torch.backends.cudnn.version())
+    return "N/A"
+
+
+def get_gpu_name() -> str:
+    """Get GPU name."""
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_name(0)
+    return "CPU"
+
+
+def save_run_config(config: dict, log_dir: Path, git_hash: str):
+    """Save complete run configuration for reproducibility."""
+    run_config = {
+        "timestamp": datetime.now().isoformat(),
+        "git_commit": git_hash,
+        "pytorch_version": get_pytorch_version(),
+        "cuda_version": get_cuda_version(),
+        "cudnn_version": get_cudnn_version(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "gpu_name": get_gpu_name(),
+        "seed": config.get('seed', 42),
+        "model_config": config.get('model', {}),
+        "training_config": config.get('training', {}),
+        "data_config": config.get('data', {}),
+        "checkpoint_config": config.get('checkpoint', {}),
+        "tokenizer_config": config.get('tokenizer', {}),
+    }
+    
+    run_config_path = Path("logs/run_config.json")
+    run_config_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(run_config_path, 'w') as f:
+        json.dump(run_config, f, indent=2)
+    
+    print(f"Run config saved to: {run_config_path}")
+    return run_config_path
 
 
 def main():
@@ -48,6 +120,9 @@ def main():
     data_config = config['data']
     checkpoint_config = config['checkpoint']
     
+    # Get git hash for reproducibility
+    git_hash = get_git_commit_hash()
+    
     # Print config
     print("=" * 60)
     print("AethyxLM Training Configuration")
@@ -58,10 +133,25 @@ def main():
     print(f"Warmup: {train_config['warmup_steps']}, Max Steps: {train_config['max_steps']}")
     print(f"Batch: {data_config['batch_size']}, Grad Accum: {train_config['grad_accum_steps']}")
     print(f"AMP: {train_config['use_amp']}, Device: {args.device or 'auto'}")
+    print(f"Git commit: {git_hash}")
     print("=" * 60)
     
-    # Device
+    # Save run config for reproducibility
+    save_run_config(config, Path("logs"), git_hash)
+    
+    # Device - accept any CUDA GPU
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Verify CUDA if requested
+    if device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but not available! Enable GPU: Runtime -> Change runtime type -> GPU")
+        device_name = torch.cuda.get_device_name(0)
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        print(f"GPU: {device_name} ({vram_gb:.1f} GB VRAM)")
+        if "T4" not in device_name and "A100" not in device_name and "V100" not in device_name and "P100" not in device_name and "L4" not in device_name:
+            print(f"Warning: GPU '{device_name}' not in common Colab types (T4, L4, A100, V100, P100). Proceeding anyway...")
+    
     print(f"Using device: {device}")
     
     # Create model
@@ -127,7 +217,11 @@ def main():
         log_interval=checkpoint_config['log_interval'],
         eval_interval=checkpoint_config['eval_interval'],
         save_interval=checkpoint_config['save_interval'],
+        generate_interval=train_config.get('generate_interval', 1000),
         device=device,
+        tensorboard_dir="logs/tensorboard",
+        log_dir="logs",
+        seed=config.get('seed', 42),
     )
     
     # Resume from checkpoint if provided

@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 
 # Path to training corpus
-DATA_FILE = ROOT_DIR / "corpus.txt"
+DATA_FILE = ROOT_DIR.parent / "tokenizer" / "data" / "corpus.txt"
 
 # Context window (sequence length)
 CONTEXT_LENGTH = 128

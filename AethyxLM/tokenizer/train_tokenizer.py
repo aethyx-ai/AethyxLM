@@ -5,6 +5,8 @@ Production BPE Tokenizer Trainer
 Author: Aethyx Labs
 """
 
+import json
+import time
 from pathlib import Path
 
 from tokenizers import Tokenizer
@@ -60,8 +62,40 @@ def train_tokenizer():
 
     tokenizer.save(str(TOKENIZER_FILE))
 
+    # Save metadata.json alongside tokenizer.json
+    metadata = {
+        "vocab_size": VOCAB_SIZE,
+        "tokenizer_type": "BPE",
+        "special_tokens": SPECIAL_TOKENS,
+        "normalizer": {
+            "type": "Sequence",
+            "components": [
+                {"type": "NFD"},
+                {"type": "Lowercase"},
+                {"type": "StripAccents"}
+            ]
+        },
+        "pre_tokenizer": {
+            "type": "ByteLevel"
+        },
+        "trainer": {
+            "type": "BpeTrainer",
+            "vocab_size": VOCAB_SIZE,
+            "min_frequency": MIN_FREQUENCY,
+            "special_tokens": SPECIAL_TOKENS
+        },
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "dataset_used": str(CORPUS_FILE),
+        "corpus_size_bytes": CORPUS_FILE.stat().st_size if CORPUS_FILE.exists() else 0,
+    }
+
+    metadata_path = TOKENIZER_FILE.with_name("metadata.json")
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
     print("\nTraining complete!")
     print(f"Tokenizer saved to:\n{TOKENIZER_FILE}")
+    print(f"Metadata saved to:\n{metadata_path}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,49 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# ============================================================\n",
+    "# CELL 5: TRAIN BPE TOKENIZER (32k vocab) + SAVE TO DRIVE\n",
+    "# ============================================================\n",
+    "import subprocess, sys, shutil\n",
+    "\n",
+    "# Fix nested directory from git clone\n",
+    "if os.path.exists('/content/AethyxLM/AethyxLM'):\n",
+    "    for item in os.listdir('/content/AethyxLM/AethyxLM'):\n",
+    "        shutil.move(os.path.join('/content/AethyxLM/AethyxLM', item), '/content/AethyxLM/')\n",
+    "    os.rmdir('/content/AethyxLM/AethyxLM')\n",
+    "\n",
+    "os.chdir('/content/AethyxLM')\n",
+    "sys.path.insert(0, '/content/AethyxLM')\n",
+    "\n",
+    "print('Training tokenizer...')\n",
+    "result = subprocess.run(\n",
+    "    [sys.executable, '-m', 'tokenizer.train_tokenizer'],\n",
+    "    cwd=LOCAL_ROOT, capture_output=True, text=True\n",
+    ")\n",
+    "print(result.stdout)\n",
+    "if result.returncode != 0:\n",
+    "    print('STDERR:', result.stderr)\n",
+    "    raise RuntimeError('Tokenizer training failed')\n",
+    "\n",
+    "# Verify\n",
+    "sys.path.insert(0, LOCAL_ROOT)\n",
+    "from tokenizer.tokenizer import AethyxTokenizer\n",
+    "tok = AethyxTokenizer()\n",
+    "print(f'[OK] Vocab size: {tok.vocab_size}')\n",
+    "ids = tok.encode('Hello world')\n",
+    "print(f'[OK] Encode: {ids}')\n",
+    "print(f'[OK] Decode: {tok.decode(ids)}')\n",
+    "\n",
+    "# Copy tokenizer to Drive\n",
+    "shutil.copy2('tokenizer/tokenizer.json', os.path.join(DRIVE_TOK, 'tokenizer.json'))\n",
+    "shutil.copy2('tokenizer/metadata.json', os.path.join(DRIVE_TOK, 'metadata.json'))\n",
+    "print('[OK] Tokenizer saved to Drive')"
+   ]
+  }
+ ]
+}
