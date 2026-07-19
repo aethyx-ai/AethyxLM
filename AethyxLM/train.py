@@ -1,5 +1,5 @@
 """
-AethyxLM - Main Training Entry Point
+AethyxLM - Main Training Entry Point (Kaggle Compatible)
 """
 
 import json
@@ -73,12 +73,12 @@ def save_run_config(config: dict, log_dir: Path, git_hash: str):
     run_config = {
         "timestamp": datetime.now().isoformat(),
         "git_commit": git_hash,
-        "pytorch_version": get_pytorch_version(),
-        "cuda_version": get_cuda_version(),
-        "cudnn_version": get_cudnn_version(),
+        "pytorch_version": torch.__version__,
+        "cuda_version": torch.version.cuda if torch.cuda.is_available() else "N/A",
+        "cudnn_version": str(torch.backends.cudnn.version()) if torch.cuda.is_available() else "N/A",
         "python_version": platform.python_version(),
         "platform": platform.platform(),
-        "gpu_name": get_gpu_name(),
+        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
         "seed": config.get('seed', 42),
         "model_config": config.get('model', {}),
         "training_config": config.get('training', {}),
@@ -97,9 +97,37 @@ def save_run_config(config: dict, log_dir: Path, git_hash: str):
     return run_config_path
 
 
+def download_tinystories(data_dir: Path):
+    """Download TinyStories dataset from Hugging Face."""
+    try:
+        from datasets import load_dataset
+        print("Downloading TinyStories dataset from Hugging Face...")
+        dataset = load_dataset("roneneldan/TinyStories", split="train")
+        texts = [item["text"] for item in dataset]
+        
+        # Split train/val
+        split_idx = int(0.9 * len(texts))
+        train_texts = texts[:split_idx]
+        val_texts = texts[split_idx:]
+        
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        
+        with open(data_dir / "train.txt", "w", encoding="utf-8") as f:
+            f.write("\n\n".join(train_texts))
+        with open(data_dir / "val.txt", "w", encoding="utf-8") as f:
+            f.write("\n\n".join(val_texts))
+        
+        print(f"[OK] Dataset saved: {len(train_texts)} train, {len(val_texts)} val stories")
+        return True
+    except Exception as e:
+        print(f"[WARN] Failed to download TinyStories: {e}")
+        return False
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Train AethyxLM")
-    parser.add_argument('--config', type=str, default='configs/train_config.json',
+    parser = argparse.ArgumentParser(description="Train AethyxLM on Kaggle")
+    parser.add_argument('--config', type=str, default='configs/train_config_kaggle.json',
                         help='Path to training config JSON')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume from')
@@ -125,7 +153,7 @@ def main():
     
     # Print config
     print("=" * 60)
-    print("AethyxLM Training Configuration")
+    print("AethyxLM Training Configuration (Kaggle)")
     print("=" * 60)
     print(f"Model: {model_config['num_layers']} layers, {model_config['embed_dim']} dim, {model_config['num_heads']} heads")
     print(f"Context: {model_config['context_length']}, Vocab: {model_config['vocab_size']}")
@@ -141,16 +169,19 @@ def main():
     
     # Device - accept any CUDA GPU
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     
     # Verify CUDA if requested
     if device == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but not available! Enable GPU: Runtime -> Change runtime type -> GPU")
+            raise RuntimeError("CUDA requested but not available! Enable GPU in Kaggle settings (Accelerator -> GPU T4 x2)")
         device_name = torch.cuda.get_device_name(0)
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"GPU: {device_name} ({vram_gb:.1f} GB VRAM)")
-        if "T4" not in device_name and "A100" not in device_name and "V100" not in device_name and "P100" not in device_name and "L4" not in device_name:
-            print(f"Warning: GPU '{device_name}' not in common Colab types (T4, L4, A100, V100, P100). Proceeding anyway...")
+        # Accept any CUDA GPU
+        known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100', 'K80', 'A10G']
+        if not any(g in device_name for g in known_gpus):
+            print(f"Note: GPU '{device_name}' not in common Kaggle types (T4, L4, A100, V100, P100, K80, A10G). Proceeding anyway...")
     
     print(f"Using device: {device}")
     
@@ -164,6 +195,13 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
+    
+    # Download/prepare dataset
+    print("Preparing dataset...")
+    if not download_tinystories(Path("data")):
+        # Fallback: check if local files exist
+        if not Path(data_config['train_file']).exists():
+            raise FileNotFoundError(f"Training data not found: {data_config['train_file']}. Run download first or provide data.")
     
     # Create datasets
     print("Loading datasets...")
@@ -185,16 +223,18 @@ def main():
         train_dataset,
         batch_size=data_config['batch_size'],
         shuffle=data_config.get('shuffle', True),
-        num_workers=data_config.get('num_workers', 0),
+        num_workers=data_config.get('num_workers', 2),
         drop_last=True,
+        pin_memory=True,
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=data_config['batch_size'],
         shuffle=False,
-        num_workers=data_config.get('num_workers', 0),
+        num_workers=data_config.get('num_workers', 2),
         drop_last=True,
+        pin_memory=True,
     )
     
     # Create trainer
@@ -219,9 +259,6 @@ def main():
         save_interval=checkpoint_config['save_interval'],
         generate_interval=train_config.get('generate_interval', 1000),
         device=device,
-        tensorboard_dir="logs/tensorboard",
-        log_dir="logs",
-        seed=config.get('seed', 42),
     )
     
     # Resume from checkpoint if provided

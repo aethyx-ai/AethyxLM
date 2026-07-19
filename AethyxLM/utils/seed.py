@@ -1,5 +1,5 @@
 """
-Random Seed Utility for Reproducibility.
+Random seed utility for reproducibility.
 """
 
 import random
