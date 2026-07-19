@@ -1,21 +1,18 @@
 import json
 
-with open('D:/CODING/AETHYXLabs/AethyxLM/colab_train.ipynb', 'r', encoding='utf-8') as f:
+with open('D:/CODING/AETHYXLabs/AethyxLM/kaggle_train.ipynb', 'r', encoding='utf-8') as f:
     nb = json.load(f)
 
-# Fix cell 2 (index 1) - the CUDA verification cell
-cell = nb['cells'][1]
+# Fix: ensure all cells have proper structure
+for i, cell in enumerate(nb['cells']):
+    if 'metadata' not in cell:
+        cell['metadata'] = {}
+    if 'outputs' not in cell:
+        cell['outputs'] = []
+    if 'execution_count' not in cell:
+        cell['execution_count'] = None
 
-new_source = []
-for line in cell['source']:
-    # Fix the f-string with escaped single quotes
-    if "GPU \\\\'" in line:
-        line = line.replace("f'Warning: GPU \\\\'{device_name}\\\\',", "f\"Warning: GPU '{device_name}'")
-    new_source.append(line)
+with open('kaggle_train_fixed.ipynb', 'w', encoding='utf-8') as f:
+    json.dump(nb, f, indent=2, ensure_ascii=False)
 
-cell['source'] = new_source
-
-with open('D:/CODING/AETHYXLabs/AethyxLM/colab_train.ipynb', 'w', encoding='utf-8') as f:
-    json.dump(nb, f, ensure_ascii=False, indent=2)
-
-print('Fixed!')
+print('Fixed and saved as kaggle_train_fixed.ipynb')
