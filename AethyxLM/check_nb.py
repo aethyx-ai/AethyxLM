@@ -1,13 +1,17 @@
 import json
+import nbformat
+from nbformat.validator import validate
 
-with open('D:/CODING/AETHYXLabs/AethyxLM/colab_train.ipynb', 'r', encoding='utf-8') as f:
+with open('kaggle_train.ipynb', 'r', encoding='utf-8') as f:
     nb = json.load(f)
 
-for i, cell in enumerate(nb['cells']):
-    cell_type = cell['cell_type']
-    source_len = len(cell['source'])
-    print('Cell {}: {}, lines: {}'.format(i, cell_type, source_len))
-    if cell['cell_type'] == 'code':
-        for j, line in enumerate(cell['source'][:5]):
-            print('  Line {}: {}'.format(j, repr(line[:80])))
-    print()
+print(f'Cells: {len(nb["cells"])}')
+print('Cell types:', [c['cell_type'] for c in nb['cells']])
+
+import nbformat
+from nbformat.validator import validate
+errors = validate(nb)
+if errors:
+    print('Validation errors:', errors)
+else:
+    print('Validation passed!')
