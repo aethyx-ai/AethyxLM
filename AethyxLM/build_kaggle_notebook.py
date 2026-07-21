@@ -1,52 +1,47 @@
 #!/usr/bin/env python3
 """
 Build Kaggle training notebook programmatically using nbformat.
-Uses external cell source files to avoid string escaping issues.
 """
 
-import json
 import nbformat as nbf
 from pathlib import Path
 
 
-def create_notebook():
-    """Create the complete Kaggle training notebook."""
-    nb = {
-        "cells": [],
-        "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python",
-                "name": "python3"
-            },
-            "language_info": {
-                "name": "python",
-                "version": "3.10"
-            }
+def build_notebook():
+    nb = nbf.v4.new_notebook()
+    
+    # Set notebook metadata
+    nb.metadata = {
+        'kernelspec': {
+            'display_name': 'Python 3',
+            'language': 'python',
+            'name': 'python3'
         },
-        "nbformat": 4,
-        "nbformat_minor": 4
+        'language_info': {
+            'name': 'python',
+            'version': '3.10'
+        }
     }
     
-    cells = []
+    # Helper to add code cells
+    def add_code(source):
+        cell = nbf.v4.new_code_cell(source)
+        cell.metadata = {}
+        cell.outputs = []
+        cell.execution_count = None
+        return cell
     
-    # Cell 1: Markdown - Title
-    cells.append({
-        "cell_type": "markdown",
-        "metadata": {},
-        "source": [
-            "# AethyxLM - Production Kaggle Training (T4 GPU x2)\n",
-            "\n",
-            "**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab\n",
-            "**Dataset:** TinyStories (auto-download from Hugging Face)\n",
-            "**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute\n\n",
-            "---"
-        ]
-    })
+    # Cell 0: Markdown - Title
+    nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
+
+**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab
+**Dataset:** TinyStories (auto-download from Hugging Face)
+**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
+
+---"""))
     
     # Cell 1: Setup
-    cells = []
-    cells.append("""# ============================================================
+    cell1 = """# ============================================================
 # CELL 1: SETUP PROJECT (Kaggle)
 # ============================================================
 import os, sys, subprocess, shutil, json, time, glob, signal
@@ -109,10 +104,10 @@ print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
 print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
 
 # Install deps
-!pip install tokenizers datasets tensorboard -q"""),
+!pip install tokenizers datasets tensorboard -q"""
     
     # Cell 2: Verify CUDA
-    """# ============================================================
+    cell2 = """# ============================================================
 # CELL 2: VERIFY CUDA (accepts any CUDA GPU)
 # ============================================================
 import torch
@@ -130,10 +125,10 @@ print(f'GPU: {device_name} ({vram_gb:.1f} GB)')
 # Accept any CUDA GPU - just warn if unexpected
 known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100']
 if not any(g in device_name for g in known_gpus):
-    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")"""),
+    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")"""
     
     # Cell 3: Prepare Data
-    """# ============================================================
+    cell3 = """# ============================================================
 # CELL 3: PREPARE DATA (TinyStories from Hugging Face)
 # ============================================================
 import random
@@ -149,7 +144,7 @@ texts = ds['text'][:NUM_STORIES]
 
 random.seed(42)
 random.shuffle(texts)
-split = int(0.9 * len(texts))
+split = int(0.95 * len(texts))
 train_texts = texts[:split]
 val_texts = texts[split:]
 
@@ -167,10 +162,237 @@ shutil.copy('data/train.txt', os.path.join(WORK_DIR, 'train.txt'))
 shutil.copy(os.path.join(DATA_DIR, 'val.txt'), os.path.join(WORK_DIR, 'val.txt'))
 
 print(f'Train: {len(train_texts)} stories')
-print(f'Val: {len(val_texts)} stories')"""),
+print(f'Val: {len(val_texts)} stories')"""
+    
+    # Build notebook
+    nb = nbf.v4.new_notebook()
+    
+    # Set metadata
+    nb.metadata = {
+        'kernelspec': {
+            'display_name': 'Python 3',
+            'language': 'python',
+            'name': 'python3'
+        },
+        'language_info': {
+            'name': 'python',
+            'version': '3.10'
+        }
+    }
+    
+    # Cell 0: Markdown - Title
+    nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
+
+**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab
+**Dataset:** TinyStories (auto-download from Hugging Face)
+**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
+
+---"""))
+    
+    # Cell 1: Setup
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 1: SETUP PROJECT (Kaggle)
+# ============================================================
+import os, sys, subprocess, shutil, json, time, glob, signal
+from pathlib import Path
+
+# Kaggle working directory (persists across restarts)
+WORK_DIR = '/kaggle/working'
+os.chdir('/kaggle/working')
+
+# Project root
+LOCAL_ROOT = '/kaggle/working/AethyxLM'
+
+# Persistent directories on Kaggle working dir (survives restarts)
+CKPT_DIR = '/kaggle/working/checkpoints'
+LOGS_DIR = '/kaggle/working/logs'
+TOK_DIR = '/kaggle/working/tokenizer'
+DATA_DIR = '/kaggle/working/dataset'
+CONFIG_DIR = '/kaggle/working/configs'
+
+for d in [CKPT_DIR, LOGS_DIR, TOK_DIR, DATA_DIR, CONFIG_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+print(f'[OK] Working dir: {WORK_DIR}')
+print(f'[OK] Checkpoints: {CKPT_DIR}')
+print(f'[OK] Logs: {LOGS_DIR}')
+print(f'[OK] Configs: {CONFIG_DIR}')
+
+# ============================================================
+# CLONE/PULL FROM GITHUB (code lives in Git)
+# ============================================================
+REPO_URL = 'https://github.com/aethyx-ai/AethyxLM.git'
+LOCAL_ROOT = '/kaggle/working/AethyxLM'
+
+if os.path.exists(os.path.join(LOCAL_ROOT, '.git')):
+    print('Updating existing repo...')
+    subprocess.run(['git', '-C', LOCAL_ROOT, 'pull'], check=True)
+else:
+    print('Cloning repo...')
+    subprocess.run(['git', 'clone', REPO_URL, LOCAL_ROOT], check=True)
+
+# Fix nested directory from git clone
+nested = os.path.join(LOCAL_ROOT, 'AethyxLM')
+if os.path.exists(nested):
+    for item in os.listdir(nested):
+        src = os.path.join(nested, item)
+        dst = os.path.join(LOCAL_ROOT, item)
+        if os.path.exists(dst):
+            if os.path.isdir(dst):
+                shutil.rmtree(dst)
+            else:
+                os.remove(dst)
+            shutil.move(src, LOCAL_ROOT)
+        os.rmdir(nested)
+
+os.chdir(LOCAL_ROOT)
+sys.path.insert(0, LOCAL_ROOT)
+
+print(f'[OK] Project: {LOCAL_ROOT}')
+print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
+print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
+
+# Install deps
+!pip install tokenizers datasets tensorboard -q""")
+    
+    # Build notebook
+    nb = nbf.v4.new_notebook()
+    
+    # Cell 0: Markdown - Title
+    nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
+
+**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab
+**Dataset:** TinyStories (auto-download from Hugging Face)
+**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
+
+---"""))
+    
+    # Cell 1: Setup
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 1: SETUP PROJECT (Kaggle)
+# ============================================================
+import os, sys, subprocess, shutil, json, time, glob, signal
+from pathlib import Path
+
+# Kaggle working directory (persists across restarts)
+WORK_DIR = '/kaggle/working'
+os.chdir('/kaggle/working')
+
+# Project root
+LOCAL_ROOT = '/kaggle/working/AethyxLM'
+
+# Persistent directories on Kaggle working dir (survives restarts)
+CKPT_DIR = '/kaggle/working/checkpoints'
+LOGS_DIR = '/kaggle/working/logs'
+TOK_DIR = '/kaggle/working/tokenizer'
+DATA_DIR = '/kaggle/working/dataset'
+CONFIG_DIR = '/kaggle/working/configs'
+
+for d in [CKPT_DIR, LOGS_DIR, TOK_DIR, DATA_DIR, CONFIG_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+print(f'[OK] Working dir: {WORK_DIR}')
+print(f'[OK] Checkpoints: {CKPT_DIR}')
+print(f'[OK] Logs: {LOGS_DIR}')
+print(f'[OK] Configs: {CONFIG_DIR}')
+
+# ============================================================
+# CLONE/PULL FROM GITHUB (code lives in Git)
+# ============================================================
+REPO_URL = 'https://github.com/aethyx-ai/AethyxLM.git'
+LOCAL_ROOT = '/kaggle/working/AethyxLM'
+
+if os.path.exists(os.path.join(LOCAL_ROOT, '.git')):
+    print('Updating existing repo...')
+    subprocess.run(['git', '-C', LOCAL_ROOT, 'pull'], check=True)
+else:
+    print('Cloning repo...')
+    subprocess.run(['git', 'clone', REPO_URL, LOCAL_ROOT], check=True)
+
+# Fix nested directory from git clone
+nested = os.path.join(LOCAL_ROOT, 'AethyxLM')
+if os.path.exists(nested):
+    for item in os.listdir(nested):
+        src = os.path.join(nested, item)
+        dst = os.path.join(LOCAL_ROOT, item)
+        if os.path.exists(dst):
+            if os.path.isdir(dst):
+                shutil.rmtree(dst)
+            else:
+                os.remove(dst)
+            shutil.move(src, LOCAL_ROOT)
+        os.rmdir(nested)
+
+os.chdir(LOCAL_ROOT)
+sys.path.insert(0, LOCAL_ROOT)
+
+print(f'[OK] Project: {LOCAL_ROOT}')
+print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
+print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
+
+# Install deps
+!pip install tokenizers datasets tensorboard -q""")
+    
+    # Cell 2: Verify CUDA
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 2: VERIFY CUDA (accepts any CUDA GPU)
+# ============================================================
+import torch
+
+print(f'PyTorch: {torch.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+
+if not torch.cuda.is_available():
+    raise RuntimeError('CUDA GPU not available! Enable GPU in Kaggle settings (Accelerator -> GPU T4 x2)')
+
+device_name = torch.cuda.get_device_name(0)
+vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+print(f'GPU: {device_name} ({vram_gb:.1f} GB)')
+
+# Accept any CUDA GPU - just warn if unexpected
+known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100']
+if not any(g in device_name for g in known_gpus):
+    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")""")
+    
+    # Cell 3: Prepare Data
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 3: PREPARE DATA (TinyStories from Hugging Face)
+# ============================================================
+import random
+
+from datasets import load_dataset
+
+print('Loading TinyStories from Hugging Face...')
+ds = load_dataset('roneneldan/TinyStories', split='train')
+
+# Use subset for faster training (adjust as needed)
+NUM_STORIES = 50000  # Increase for full training
+texts = ds['text'][:NUM_STORIES]
+
+random.seed(42)
+random.shuffle(texts)
+split = int(0.95 * len(texts))
+train_texts = texts[:split]
+val_texts = texts[split:]
+
+os.makedirs('data', exist_ok=True)
+with open('data/train.txt', 'w', encoding='utf-8') as f:
+    f.write('\\n\\n'.join(train_texts))
+with open('data/val.txt', 'w', encoding='utf-8') as f:
+    f.write('\\n\\n'.join(val_texts))
+
+print(f'Train: {len(train_texts)} stories')
+print(f'Val: {len(val_texts)} stories')
+
+# Also copy to persistent storage for resume
+shutil.copy('data/train.txt', os.path.join(WORK_DIR, 'train.txt'))
+shutil.copy(os.path.join(DATA_DIR, 'val.txt'), os.path.join(WORK_DIR, 'val.txt'))
+
+print(f'Train: {len(train_texts)} stories')
+print(f'Val: {len(val_texts)} stories')""")
     
     # Cell 4: Train BPE Tokenizer
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 4: TRAIN BPE TOKENIZER (32k vocab) + SAVE TO PERSISTENT
 # ============================================================
 import subprocess
@@ -197,10 +419,10 @@ print(f'[OK] Decode: {tok.decode(ids)}')
 # Copy tokenizer to persistent storage
 shutil.copy2('tokenizer/tokenizer.json', os.path.join(WORK_DIR, 'tokenizer.json'))
 shutil.copy2('tokenizer/metadata.json', os.path.join(WORK_DIR, 'metadata.json'))
-print('[OK] Tokenizer saved to persistent storage')"""),
+print('[OK] Tokenizer saved to persistent storage')""")
     
     # Cell 5: Config
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 5: CONFIG FOR KAGGLE T4 x2
 # ============================================================
 import json
@@ -234,10 +456,10 @@ shutil.copy2('configs/train_config_kaggle.json', '/kaggle/working/configs/train_
 
 print('[OK] Config written to:')
 for k, v in cfg['training'].items():
-    print(f'  {k}: {v}')"""),
+    print(f'  {k}: {v}')""")
     
     # Cell 6: Auto-resume
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 6: AUTO-RESUME FROM PERSISTENT CHECKPOINT
 # ============================================================
 import glob
@@ -265,14 +487,14 @@ if resume_path:
     RESUME_ARGS = ['--resume', resume_path]
 else:
     print('[OK] No checkpoint found, starting fresh')
-    RESUME_ARGS = []"""),
+    RESUME_ARGS = []""")
     
     # Cell 7: Sync functions
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 7: SYNC CHECKPOINTS + LOGS + CONFIG (LOCAL <-> PERSISTENT)
 # ============================================================
 def sync_to_persistent():
-    '''Copy local checkpoints, logs, config to persistent WORK_DIR.'''
+    \"\"\"Copy local checkpoints, logs, config to persistent WORK_DIR.\"\"\"
     # Checkpoints
     if os.path.exists('checkpoints'):
         for f in os.listdir('checkpoints'):
@@ -301,7 +523,7 @@ def sync_to_persistent():
             print(f'  Config sync failed: {e}')
 
 def sync_from_persistent():
-    '''Copy persistent checkpoints to local before training.'''
+    \"\"\"Copy persistent checkpoints to local before training.\"\"\"
     if not os.path.exists(CKPT_DIR):
         return
     os.makedirs('checkpoints', exist_ok=True)
@@ -318,10 +540,10 @@ def sync_from_persistent():
 
 # Initial sync from Drive
 sync_from_persistent()
-print('[OK] Sync ready (checkpoints + logs + config)')"""),
+print('[OK] Sync ready (checkpoints + logs + config)')""")
     
     # Cell 8: Training wrapper
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 8: TRAINING WRAPPER WITH TRY/FINALLY + AUTO-SYNC
 # ============================================================
 import torch
@@ -371,10 +593,10 @@ finally:
         print('[OK] Training completed successfully!')
     else:
         print(f'[FAIL] Training failed with code {result.returncode}')
-        print('[INFO] You can resume from last checkpoint on next session')"""),
+        print('[INFO] You can resume from last checkpoint on next session')""")
     
     # Cell 9: Download
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 9: DOWNLOAD FINAL CHECKPOINTS + LOGS
 # ============================================================
 from IPython.display import FileLink, display
@@ -395,10 +617,10 @@ for f in [ckpt_best, ckpt_latest] + ckpt_steps:
 # Also download logs if they exist
 if os.path.exists('logs'):
     for f in os.listdir('logs'):
-        display(FileLink(os.path.join('logs', f)))"""),
+        display(FileLink(os.path.join('logs', f)))""")
     
     # Cell 10: Inference
-    """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 10: QUICK INFERENCE TEST
 # ============================================================
 import torch
@@ -435,15 +657,7 @@ print(generate('Once upon a time'))
 print('---')
 print(generate('The little boy'))
 print('---')
-print(generate('In a magical forest'))"""),
-    
-    # Build cells
-]
-
-    for source in [cell1_source, cell2_source, cell3_source, cell4_source,
-                   cell5_source, cell6_source, cell7_source, cell8_source,
-                   cell9_source, cell10_source]:
-        nb.cells.append(nbf.v4.new_code_cell(source))
+print(generate('In a magical forest'))""")
     
     # Set metadata
     nb.metadata = {
