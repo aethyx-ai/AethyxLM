@@ -9,7 +9,7 @@ from pathlib import Path
 
 def build_notebook():
     nb = nbf.v4.new_notebook()
-    
+
     # Set notebook metadata
     nb.metadata = {
         'kernelspec': {
@@ -22,15 +22,7 @@ def build_notebook():
             'version': '3.10'
         }
     }
-    
-    # Helper to add code cells
-    def add_code(source):
-        cell = nbf.v4.new_code_cell(source)
-        cell.metadata = {}
-        cell.outputs = []
-        cell.execution_count = None
-        return cell
-    
+
     # Cell 0: Markdown - Title
     nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
 
@@ -39,9 +31,9 @@ def build_notebook():
 **Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
 
 ---"""))
-    
+
     # Cell 1: Setup
-    cell1 = """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 1: SETUP PROJECT (Kaggle)
 # ============================================================
 import os, sys, subprocess, shutil, json, time, glob, signal
@@ -104,10 +96,10 @@ print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
 print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
 
 # Install deps
-!pip install tokenizers datasets tensorboard -q"""
-    
+!pip install tokenizers datasets tensorboard -q"""))
+
     # Cell 2: Verify CUDA
-    cell2 = """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 2: VERIFY CUDA (accepts any CUDA GPU)
 # ============================================================
 import torch
@@ -125,13 +117,15 @@ print(f'GPU: {device_name} ({vram_gb:.1f} GB)')
 # Accept any CUDA GPU - just warn if unexpected
 known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100']
 if not any(g in device_name for g in known_gpus):
-    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")"""
-    
+    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")"""))
+
     # Cell 3: Prepare Data
-    cell3 = """# ============================================================
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
 # CELL 3: PREPARE DATA (TinyStories from Hugging Face)
 # ============================================================
 import random
+import os
+import shutil
 
 from datasets import load_dataset
 
@@ -159,538 +153,369 @@ print(f'Val: {len(val_texts)} stories')
 
 # Also copy to persistent storage for resume
 shutil.copy('data/train.txt', os.path.join(WORK_DIR, 'train.txt'))
-shutil.copy(os.path.join(DATA_DIR, 'val.txt'), os.path.join(WORK_DIR, 'val.txt'))
+shutil.copy('data/val.txt', os.path.join(WORK_DIR, 'val.txt'))
 
 print(f'Train: {len(train_texts)} stories')
-print(f'Val: {len(val_texts)} stories')"""
-    
-    # Build notebook
-    nb = nbf.v4.new_notebook()
-    
-    # Set metadata
-    nb.metadata = {
-        'kernelspec': {
-            'display_name': 'Python 3',
-            'language': 'python',
-            'name': 'python3'
-        },
-        'language_info': {
-            'name': 'python',
-            'version': '3.10'
-        }
-    }
-    
-    # Cell 0: Markdown - Title
-    nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
+print(f'Val: {len(val_texts)} stories)"""))
 
-**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab
-**Dataset:** TinyStories (auto-download from Hugging Face)
-**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
-
----"""))
-    
-    # Cell 1: Setup
+    # Cell 4: Train Tokenizer
     nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 1: SETUP PROJECT (Kaggle)
+# CELL 4: TRAIN TOKENIZER (BPE, 32k vocab)
 # ============================================================
-import os, sys, subprocess, shutil, json, time, glob, signal
-from pathlib import Path
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer
+from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 
-# Kaggle working directory (persists across restarts)
-WORK_DIR = '/kaggle/working'
-os.chdir('/kaggle/working')
+VOCAB_SIZE = 32000
+SPECIAL_TOKENS = ["<pad>", "<unk>", "<bos>", "<eos>"]
 
-# Project root
-LOCAL_ROOT = '/kaggle/working/AethyxLM'
+# Combine train + val for tokenizer training
+with open('data/train.txt', 'r', encoding='utf-8') as f:
+    train_data = f.read()
+with open('data/val.txt', 'r', encoding='utf-8') as f:
+    val_data = f.read()
 
-# Persistent directories on Kaggle working dir (survives restarts)
-CKPT_DIR = '/kaggle/working/checkpoints'
-LOGS_DIR = '/kaggle/working/logs'
-TOK_DIR = '/kaggle/working/tokenizer'
-DATA_DIR = '/kaggle/working/dataset'
-CONFIG_DIR = '/kaggle/working/configs'
+combined_path = 'data/combined.txt'
+with open(combined_path, 'w', encoding='utf-8') as f:
+    f.write(train_data + '\\n\\n' + val_data)
 
-for d in [CKPT_DIR, LOGS_DIR, TOK_DIR, DATA_DIR, CONFIG_DIR]:
-    os.makedirs(d, exist_ok=True)
+print(f'Training BPE tokenizer ({VOCAB_SIZE} vocab)...')
 
-print(f'[OK] Working dir: {WORK_DIR}')
-print(f'[OK] Checkpoints: {CKPT_DIR}')
-print(f'[OK] Logs: {LOGS_DIR}')
-print(f'[OK] Configs: {CONFIG_DIR}')
-
-# ============================================================
-# CLONE/PULL FROM GITHUB (code lives in Git)
-# ============================================================
-REPO_URL = 'https://github.com/aethyx-ai/AethyxLM.git'
-LOCAL_ROOT = '/kaggle/working/AethyxLM'
-
-if os.path.exists(os.path.join(LOCAL_ROOT, '.git')):
-    print('Updating existing repo...')
-    subprocess.run(['git', '-C', LOCAL_ROOT, 'pull'], check=True)
-else:
-    print('Cloning repo...')
-    subprocess.run(['git', 'clone', REPO_URL, LOCAL_ROOT], check=True)
-
-# Fix nested directory from git clone
-nested = os.path.join(LOCAL_ROOT, 'AethyxLM')
-if os.path.exists(nested):
-    for item in os.listdir(nested):
-        src = os.path.join(nested, item)
-        dst = os.path.join(LOCAL_ROOT, item)
-        if os.path.exists(dst):
-            if os.path.isdir(dst):
-                shutil.rmtree(dst)
-            else:
-                os.remove(dst)
-            shutil.move(src, LOCAL_ROOT)
-        os.rmdir(nested)
-
-os.chdir(LOCAL_ROOT)
-sys.path.insert(0, LOCAL_ROOT)
-
-print(f'[OK] Project: {LOCAL_ROOT}')
-print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
-print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
-
-# Install deps
-!pip install tokenizers datasets tensorboard -q""")
-    
-    # Build notebook
-    nb = nbf.v4.new_notebook()
-    
-    # Cell 0: Markdown - Title
-    nb.cells.append(nbf.v4.new_markdown_cell("""# AethyxLM - Production Kaggle Training (T4 GPU x2)
-
-**Architecture:** 14M params, 8L, 256D, 8H, 128ctx, 32k vocab
-**Dataset:** TinyStories (auto-download from Hugging Face)
-**Storage:** GitHub = code, Kaggle Working = checkpoints/logs, Kaggle GPU = compute
-
----"""))
-    
-    # Cell 1: Setup
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 1: SETUP PROJECT (Kaggle)
-# ============================================================
-import os, sys, subprocess, shutil, json, time, glob, signal
-from pathlib import Path
-
-# Kaggle working directory (persists across restarts)
-WORK_DIR = '/kaggle/working'
-os.chdir('/kaggle/working')
-
-# Project root
-LOCAL_ROOT = '/kaggle/working/AethyxLM'
-
-# Persistent directories on Kaggle working dir (survives restarts)
-CKPT_DIR = '/kaggle/working/checkpoints'
-LOGS_DIR = '/kaggle/working/logs'
-TOK_DIR = '/kaggle/working/tokenizer'
-DATA_DIR = '/kaggle/working/dataset'
-CONFIG_DIR = '/kaggle/working/configs'
-
-for d in [CKPT_DIR, LOGS_DIR, TOK_DIR, DATA_DIR, CONFIG_DIR]:
-    os.makedirs(d, exist_ok=True)
-
-print(f'[OK] Working dir: {WORK_DIR}')
-print(f'[OK] Checkpoints: {CKPT_DIR}')
-print(f'[OK] Logs: {LOGS_DIR}')
-print(f'[OK] Configs: {CONFIG_DIR}')
-
-# ============================================================
-# CLONE/PULL FROM GITHUB (code lives in Git)
-# ============================================================
-REPO_URL = 'https://github.com/aethyx-ai/AethyxLM.git'
-LOCAL_ROOT = '/kaggle/working/AethyxLM'
-
-if os.path.exists(os.path.join(LOCAL_ROOT, '.git')):
-    print('Updating existing repo...')
-    subprocess.run(['git', '-C', LOCAL_ROOT, 'pull'], check=True)
-else:
-    print('Cloning repo...')
-    subprocess.run(['git', 'clone', REPO_URL, LOCAL_ROOT], check=True)
-
-# Fix nested directory from git clone
-nested = os.path.join(LOCAL_ROOT, 'AethyxLM')
-if os.path.exists(nested):
-    for item in os.listdir(nested):
-        src = os.path.join(nested, item)
-        dst = os.path.join(LOCAL_ROOT, item)
-        if os.path.exists(dst):
-            if os.path.isdir(dst):
-                shutil.rmtree(dst)
-            else:
-                os.remove(dst)
-            shutil.move(src, LOCAL_ROOT)
-        os.rmdir(nested)
-
-os.chdir(LOCAL_ROOT)
-sys.path.insert(0, LOCAL_ROOT)
-
-print(f'[OK] Project: {LOCAL_ROOT}')
-print(f'[OK] Config: {os.path.exists("configs/train_config.json")}')
-print(f'[OK] Corpus: {os.path.exists("tokenizer/data/corpus.txt")}')
-
-# Install deps
-!pip install tokenizers datasets tensorboard -q""")
-    
-    # Cell 2: Verify CUDA
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 2: VERIFY CUDA (accepts any CUDA GPU)
-# ============================================================
-import torch
-
-print(f'PyTorch: {torch.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-
-if not torch.cuda.is_available():
-    raise RuntimeError('CUDA GPU not available! Enable GPU in Kaggle settings (Accelerator -> GPU T4 x2)')
-
-device_name = torch.cuda.get_device_name(0)
-vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-print(f'GPU: {device_name} ({vram_gb:.1f} GB)')
-
-# Accept any CUDA GPU - just warn if unexpected
-known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100']
-if not any(g in device_name for g in known_gpus):
-    print(f"Warning: GPU '{device_name}' not in common Kaggle types. Proceeding anyway...")""")
-    
-    # Cell 3: Prepare Data
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 3: PREPARE DATA (TinyStories from Hugging Face)
-# ============================================================
-import random
-
-from datasets import load_dataset
-
-print('Loading TinyStories from Hugging Face...')
-ds = load_dataset('roneneldan/TinyStories', split='train')
-
-# Use subset for faster training (adjust as needed)
-NUM_STORIES = 50000  # Increase for full training
-texts = ds['text'][:NUM_STORIES]
-
-random.seed(42)
-random.shuffle(texts)
-split = int(0.95 * len(texts))
-train_texts = texts[:split]
-val_texts = texts[split:]
-
-os.makedirs('data', exist_ok=True)
-with open('data/train.txt', 'w', encoding='utf-8') as f:
-    f.write('\\n\\n'.join(train_texts))
-with open('data/val.txt', 'w', encoding='utf-8') as f:
-    f.write('\\n\\n'.join(val_texts))
-
-print(f'Train: {len(train_texts)} stories')
-print(f'Val: {len(val_texts)} stories')
-
-# Also copy to persistent storage for resume
-shutil.copy('data/train.txt', os.path.join(WORK_DIR, 'train.txt'))
-shutil.copy(os.path.join(DATA_DIR, 'val.txt'), os.path.join(WORK_DIR, 'val.txt'))
-
-print(f'Train: {len(train_texts)} stories')
-print(f'Val: {len(val_texts)} stories')""")
-    
-    # Cell 4: Train BPE Tokenizer
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 4: TRAIN BPE TOKENIZER (32k vocab) + SAVE TO PERSISTENT
-# ============================================================
-import subprocess
-
-print('Training tokenizer...')
-result = subprocess.run(
-    [sys.executable, '-m', 'tokenizer.train_tokenizer'],
-    cwd=LOCAL_ROOT, capture_output=True, text=True
+tokenizer = Tokenizer(BPE(unk_token="<unk>"))
+tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+trainer = BpeTrainer(
+    vocab_size=VOCAB_SIZE,
+    special_tokens=SPECIAL_TOKENS,
+    min_frequency=2,
+    show_progress=True
 )
-print(result.stdout)
-if result.returncode != 0:
-    print('STDERR:', result.stderr)
-    raise RuntimeError('Tokenizer training failed')
+tokenizer.train([combined_path], trainer)
+tokenizer.decoder = ByteLevelDecoder()
 
-# Verify
-sys.path.insert(0, LOCAL_ROOT)
-from tokenizer.tokenizer import AethyxTokenizer
-tok = AethyxTokenizer()
-print(f'[OK] Vocab size: {tok.vocab_size}')
-ids = tok.encode('Hello world')
-print(f'[OK] Encode: {ids}')
-print(f'[OK] Decode: {tok.decode(ids)}')
+# Save tokenizer
+os.makedirs('tokenizer', exist_ok=True)
+tokenizer.save('tokenizer/tokenizer.json')
 
-# Copy tokenizer to persistent storage
-shutil.copy2('tokenizer/tokenizer.json', os.path.join(WORK_DIR, 'tokenizer.json'))
-shutil.copy2('tokenizer/metadata.json', os.path.join(WORK_DIR, 'metadata.json'))
-print('[OK] Tokenizer saved to persistent storage')""")
-    
-    # Cell 5: Config
+# Also save to persistent storage
+shutil.copy('tokenizer/tokenizer.json', os.path.join(TOK_DIR, 'tokenizer.json'))
+shutil.copy('data/combined.txt', os.path.join(TOK_DIR, 'corpus.txt'))
+
+print(f'[OK] Tokenizer saved: tokenizer/tokenizer.json')
+print(f'[OK] Vocab size: {tokenizer.get_vocab_size()}')"""))
+
+    # Cell 5: Load Config
     nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 5: CONFIG FOR KAGGLE T4 x2
+# CELL 5: LOAD TRAINING CONFIG
 # ============================================================
 import json
 
-with open('configs/train_config.json') as f:
-    cfg = json.load(f)
+with open('configs/train_config.json', 'r') as f:
+    config = json.load(f)
 
-# T4 x2 optimized settings
-cfg['training'].update({
-    'max_steps': 100000,
-    'warmup_steps': 10000,
-    'batch_size': 64,
-    'grad_accum_steps': 1,
-    'use_amp': True,
-    'eval_interval': 1000,
-    'save_interval': 1000,
-    'log_interval': 100,
-    'learning_rate': 6e-4,
-    'grad_clip': 1.0,
-    'weight_decay': 0.1,
-    'min_lr_ratio': 0.1,
-    'generate_interval': 1000,
-})
+print(json.dumps(config, indent=2))"""))
 
-with open('configs/train_config_kaggle.json', 'w') as f:
-    json.dump(cfg, f, indent=2)
-
-# Backup both to persistent storage
-shutil.copy2('configs/train_config.json', '/kaggle/working/configs/train_config.json')
-shutil.copy2('configs/train_config_kaggle.json', '/kaggle/working/configs/train_config_kaggle.json')
-
-print('[OK] Config written to:')
-for k, v in cfg['training'].items():
-    print(f'  {k}: {v}')""")
-    
-    # Cell 6: Auto-resume
+    # Cell 6: Build Model
     nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 6: AUTO-RESUME FROM PERSISTENT CHECKPOINT
-# ============================================================
-import glob
-
-def find_latest_checkpoint():
-    '''Find latest valid checkpoint in persistent storage or local.'''
-    candidates = [
-        '/kaggle/working/checkpoints/checkpoint_latest.pt',
-        'checkpoints/checkpoint_latest.pt',
-    ]
-    for base in ['/kaggle/working/checkpoints', 'checkpoints']:
-        if os.path.exists(base):
-            steps = sorted(glob.glob(os.path.join(base, 'checkpoint_step_*.pt')))
-            if steps:
-                candidates.append(steps[-1])
-
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    return None
-
-resume_path = find_latest_checkpoint()
-if resume_path:
-    print(f'[OK] Found checkpoint: {resume_path}')
-    RESUME_ARGS = ['--resume', resume_path]
-else:
-    print('[OK] No checkpoint found, starting fresh')
-    RESUME_ARGS = []""")
-    
-    # Cell 7: Sync functions
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 7: SYNC CHECKPOINTS + LOGS + CONFIG (LOCAL <-> PERSISTENT)
-# ============================================================
-def sync_to_persistent():
-    \"\"\"Copy local checkpoints, logs, config to persistent WORK_DIR.\"\"\"
-    # Checkpoints
-    if os.path.exists('checkpoints'):
-        for f in os.listdir('checkpoints'):
-            if f.endswith('.pt'):
-                try:
-                    shutil.copy2(os.path.join('checkpoints', f),
-                               os.path.join(CKPT_DIR, f))
-                except Exception as e:
-                    print(f'  Sync failed for {f}: {e}')
-
-    # Logs
-    if os.path.exists('logs'):
-        for f in os.listdir('logs'):
-            try:
-                shutil.copy2(os.path.join('logs', f),
-                           os.path.join(LOGS_DIR, f))
-            except Exception as e:
-                print(f'  Log sync failed for {f}: {e}')
-
-    # Config (kaggle version)
-    colab_cfg = 'configs/train_config_kaggle.json'
-    if os.path.exists(colab_cfg):
-        try:
-            shutil.copy2(colab_cfg, os.path.join(CONFIG_DIR, 'train_config_kaggle.json'))
-        except Exception as e:
-            print(f'  Config sync failed: {e}')
-
-def sync_from_persistent():
-    \"\"\"Copy persistent checkpoints to local before training.\"\"\"
-    if not os.path.exists(CKPT_DIR):
-        return
-    os.makedirs('checkpoints', exist_ok=True)
-    for f in os.listdir(CKPT_DIR):
-        if f.endswith('.pt'):
-            src = os.path.join(CKPT_DIR, f)
-            dst = os.path.join('checkpoints', f)
-            if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
-                try:
-                    shutil.copy2(src, dst)
-                    print(f'  Synced from persistent: {f}')
-                except Exception as e:
-                    print(f'  Sync failed for {f}: {e}')
-
-# Initial sync from Drive
-sync_from_persistent()
-print('[OK] Sync ready (checkpoints + logs + config)')""")
-    
-    # Cell 8: Training wrapper
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 8: TRAINING WRAPPER WITH TRY/FINALLY + AUTO-SYNC
+# CELL 6: BUILD MODEL
 # ============================================================
 import torch
-import threading, time
+import torch.nn as nn
+from torch.nn import functional as F
 
-print('Starting training on', torch.cuda.get_device_name(0))
-print('=' * 60)
+class CausalSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        assert config['n_embd'] % config['n_head'] == 0
+        self.c_attn = nn.Linear(config['n_embd'], 3 * config['n_embd'])
+        self.c_proj = nn.Linear(config['n_embd'], config['n_embd'])
+        self.n_head = config['n_head']
+        self.n_embd = config['n_embd']
+        self.register_buffer('bias', torch.tril(torch.ones(config['block_size'], config['block_size']))
+                                   .view(1, 1, config['block_size'], config['block_size']))
 
-cmd = [sys.executable, 'train.py',
-       '--config', 'configs/train_config_kaggle.json',
-       '--device', 'cuda']
+    def forward(self, x):
+        B, T, C = x.size()
+        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        
+        att = (q @ k.transpose(-2, -1)) * (1.0 / (C // self.n_head) ** 0.5)
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        y = att @ v
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        return self.c_proj(y)
 
-if RESUME_ARGS:
-    cmd.extend(RESUME_ARGS)
-
-print(f'Command: {" ".join(cmd)}')
-print('-' * 60)
-
-stop_sync = False
-sync_lock = threading.Lock()
-
-def periodic_sync():
-    while not stop_sync:
-        time.sleep(300)  # Every 5 minutes
-        if not stop_sync:
-            with sync_lock:
-                sync_to_persistent()
-                print(f'[{time.strftime("%H:%M:%S")}] Synced checkpoints + logs + config to persistent')
-
-sync_thread = threading.Thread(target=periodic_sync, daemon=True)
-sync_thread.start()
-
-start = time.time()
-try:
-    result = subprocess.run(cmd, cwd=LOCAL_ROOT)
-finally:
-    # ALWAYS sync on exit (crash, interrupt, success, disconnect)
-    stop_sync = True
-    sync_thread.join(timeout=10)
-    sync_to_persistent()
-    elapsed = time.time() - start
-    print('=' * 60)
-    print(f'Training finished in {elapsed/3600:.1f}h')
-    print(f'Exit code: {result.returncode}')
-
-    if result.returncode == 0:
-        print('[OK] Training completed successfully!')
-    else:
-        print(f'[FAIL] Training failed with code {result.returncode}')
-        print('[INFO] You can resume from last checkpoint on next session')""")
+class MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc = nn.Linear(config['n_embd'], 4 * config['n_embd'])
+        self.c_proj = nn.Linear(4 * config['n_embd'], config['n_embd'])
     
-    # Cell 9: Download
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 9: DOWNLOAD FINAL CHECKPOINTS + LOGS
-# ============================================================
-from IPython.display import FileLink, display
-import os
+    def forward(self, x):
+        return self.c_proj(F.gelu(self.c_fc(x)))
 
-ckpt_best = 'checkpoints/checkpoint_best.pt'
-ckpt_latest = 'checkpoints/checkpoint_latest.pt'
-ckpt_steps = sorted([f for f in os.listdir('checkpoints') 
-                   if f.startswith('checkpoint_step_')])
+class Block(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(config['n_embd'])
+        self.attn = CausalSelfAttention(config)
+        self.ln_2 = nn.LayerNorm(config['n_embd'])
+        self.mlp = MLP(config)
 
-for f in [ckpt_best, ckpt_latest] + ckpt_steps:
-    if os.path.exists(f):
-        print(f'Downloading: {f}')
-        display(FileLink(f))
-    else:
-        print(f'Not found: {f}')
+    def forward(self, x):
+        x = x + self.attn(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
 
-# Also download logs if they exist
-if os.path.exists('logs'):
-    for f in os.listdir('logs'):
-        display(FileLink(os.path.join('logs', f)))""")
-    
-    # Cell 10: Inference
-    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
-# CELL 10: QUICK INFERENCE TEST
-# ============================================================
-import torch
-from model.gpt import GPT
-from tokenizer.tokenizer import AethyxTokenizer
+class GPT(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.transformer = nn.ModuleDict(dict(
+            wte = nn.Embedding(config['vocab_size'], config['n_embd']),
+            wpe = nn.Embedding(config['block_size'], config['n_embd']),
+            h = nn.ModuleList([Block(config) for _ in range(config['n_layer'])]),
+            ln_f = nn.LayerNorm(config['n_embd']),
+        ))
+        self.lm_head = nn.Linear(config['n_embd'], config['vocab_size'], bias=False)
+        self.transformer.wte.weight = self.lm_head.weight
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+    def forward(self, idx, targets=None):
+        B, T = idx.size()
+        assert T <= self.config['block_size'], f"Sequence length {T} > block size {self.config['block_size']}"
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0)
+        tok_emb = self.transformer.wte(idx)
+        pos_emb = self.transformer.wpe(pos)
+        x = tok_emb + pos_emb
+        for block in self.transformer.h:
+            x = block(x)
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x)
+        loss = None
+        if targets is not None:
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        return logits, loss
+
+# Load tokenizer to get vocab size
+from tokenizers import Tokenizer
+tok = Tokenizer.from_file('tokenizer/tokenizer.json')
+config['vocab_size'] = tok.get_vocab_size()
 
 device = 'cuda'
-model = GPT().to(device)
-tok = AethyxTokenizer()
+model = GPT(config).to(device)
 
-ckpt_path = 'checkpoints/checkpoint_best.pt'
-if not os.path.exists(ckpt_path):
-    ckpt_path = 'checkpoints/checkpoint_latest.pt'
+n_params = sum(p.numel() for p in model.parameters())
+print(f'Model: {n_params/1e6:.1f}M params')
+print(f'Config: {config}')"""))
 
-ckpt = torch.load(ckpt_path, map_location=device)
-model.load_state_dict(ckpt['model_state_dict'])
+    # Cell 7: Data Loader
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 7: DATA LOADER
+# ============================================================
+import torch
+from torch.utils.data import Dataset, DataLoader
+from tokenizers import Tokenizer
+
+class TextDataset(Dataset):
+    def __init__(self, file_path, tokenizer, block_size):
+        self.tokenizer = tokenizer
+        self.block_size = block_size
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        self.data = torch.tensor(tokenizer.encode(text).ids, dtype=torch.long)
+
+    def __len__(self):
+        return max(0, len(self.data) - self.block_size)
+
+    def __getitem__(self, idx):
+        x = self.data[idx:idx + self.block_size]
+        y = self.data[idx + 1:idx + 1 + self.block_size]
+        return x, y
+
+tok = Tokenizer.from_file('tokenizer/tokenizer.json')
+block_size = config['block_size']
+batch_size = config['batch_size']
+
+train_ds = TextDataset('data/train.txt', tok, block_size)
+val_ds = TextDataset('data/val.txt', tok, block_size)
+
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2, pin_memory=True)
+val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+
+print(f'Train batches: {len(train_loader)}')
+print(f'Val batches: {len(val_loader)}')"""))
+
+    # Cell 8: Training Loop
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 8: TRAINING LOOP
+# ============================================================
+import torch
+import torch.nn.functional as F
+from torch.cuda.amp import autocast, GradScaler
+from torch.utils.tensorboard import SummaryWriter
+import os
+import time
+
+device = 'cuda'
+model = model.to(device)
+model.train()
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], weight_decay=config['weight_decay'])
+scaler = GradScaler()
+writer = SummaryWriter(os.path.join(LOGS_DIR, f'run_{int(time.time())}'))
+
+# Resume from checkpoint if exists
+start_step = 0
+ckpt_files = sorted(glob.glob(os.path.join(CKPT_DIR, 'ckpt_step_*.pt')))
+if ckpt_files:
+    latest = ckpt_files[-1]
+    print(f'Resuming from {latest}')
+    ckpt = torch.load(latest, map_location=device)
+    model.load_state_dict(ckpt['model'])
+    optimizer.load_state_dict(ckpt['optimizer'])
+    scaler.load_state_dict(ckpt['scaler'])
+    start_step = ckpt['step']
+    print(f'Resumed at step {start_step}')
+
+max_steps = config['max_steps']
+eval_interval = config.get('eval_interval', 500)
+save_interval = config.get('save_interval', 1000)
+grad_accum = config.get('grad_accum_steps', 1)
+
+print(f'Training: {max_steps} steps, eval every {eval_interval}, save every {save_interval}')
+print(f'Grad accumulation: {grad_accum}')
+
+step = start_step
+epoch = 0
+while step < max_steps:
+    epoch += 1
+    for x, y in train_loader:
+        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+        
+        with autocast():
+            logits, loss = model(x, y)
+            loss = loss / grad_accum
+        
+        scaler.scale(loss).backward()
+        
+        if (step + 1) % grad_accum == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+        
+        if step % 10 == 0:
+            writer.add_scalar('train/loss', loss.item() * grad_accum, step)
+            writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], step)
+            if step % 50 == 0:
+                print(f'Step {step}/{max_steps} | Loss: {loss.item() * grad_accum:.4f} | LR: {optimizer.param_groups[0]["lr"]:.2e}')
+        
+        # Evaluation
+        if step % eval_interval == 0 and step > 0:
+            model.eval()
+            val_losses = []
+            with torch.no_grad():
+                for vx, vy in val_loader:
+                    vx, vy = vx.to(device), vy.to(device)
+                    with autocast():
+                        _, vloss = model(vx, vy)
+                    val_losses.append(vloss.item())
+            avg_val = sum(val_losses) / len(val_losses)
+            writer.add_scalar('val/loss', avg_val, step)
+            print(f'  >> Val loss: {avg_val:.4f}')
+            model.train()
+        
+        # Save checkpoint
+        if step % save_interval == 0 and step > 0:
+            ckpt_path = os.path.join(CKPT_DIR, f'ckpt_step_{step}.pt')
+            torch.save({
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scaler': scaler.state_dict(),
+                'step': step,
+                'config': config,
+            }, ckpt_path)
+            print(f'  >> Saved checkpoint: {ckpt_path}')
+        
+        step += 1
+        if step >= max_steps:
+            break
+
+# Final save
+final_path = os.path.join(CKPT_DIR, f'ckpt_step_{step}.pt')
+torch.save({
+    'model': model.state_dict(),
+    'optimizer': optimizer.state_dict(),
+    'scaler': scaler.state_dict(),
+    'step': step,
+    'config': config,
+}, final_path)
+print(f'Training complete. Final checkpoint: {final_path}')
+writer.close()"""))
+
+    # Cell 9: Generate Samples
+    nb.cells.append(nbf.v4.new_code_cell("""# ============================================================
+# CELL 9: GENERATE SAMPLES
+# ============================================================
+import torch
+from tokenizers import Tokenizer
+
+device = 'cuda'
 model.eval()
+tok = Tokenizer.from_file('tokenizer/tokenizer.json')
 
-@torch.no_grad()
-def generate(prompt, max_new=200, temp=0.8, top_k=50):
-    ids = torch.tensor([tok.encode(prompt)], dtype=torch.long, device=device)
-    for _ in range(max_new):
-        logits = model(ids[:, -128:])
-        logits = logits[:, -1, :] / temp
-        if top_k > 0:
-            v, _ = torch.topk(logits, top_k)
-            logits[logits < v[:, [-1]]] = -float('inf')
-        probs = torch.softmax(logits, dim=-1)
-        next_id = torch.multinomial(probs, 1)
-        ids = torch.cat([ids, next_id], dim=1)
+def generate(prompt, max_new_tokens=100, temperature=0.8, top_k=40):
+    ids = torch.tensor([tok.encode(prompt).ids], dtype=torch.long, device=device)
+    for _ in range(max_new_tokens):
+        idx_cond = ids[:, -config['block_size']:]
+        with torch.no_grad():
+            logits, _ = model(idx_cond)
+            logits = logits[:, -1, :] / temperature
+            if top_k > 0:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('inf')
+            probs = F.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, 1)
+            ids = torch.cat([ids, next_id], dim=1)
     return tok.decode(ids[0].tolist())
 
-print(generate('Once upon a time'))
+print(generate('Once upon a time', max_new_tokens=200))
 print('---')
-print(generate('The little boy'))
+print(generate('The little boy', max_new_tokens=200))
 print('---')
-print(generate('In a magical forest'))""")
-    
-    # Set metadata
-    nb.metadata = {
-        'kernelspec': {
-            'display_name': 'Python 3',
-            'language': 'python',
-            'name': 'python3'
-        },
-        'language_info': {
-            'name': 'python',
-            'version': '3.10'
-        }
-    }
-    
+print(generate('In a magical forest', max_new_tokens=200))"""))
+
     # Clean up cell metadata
     for cell in nb.cells:
         if cell.cell_type == 'code':
             cell.metadata = {}
             cell.outputs = []
             cell.execution_count = None
-    
+
     return nb
 
 
-def build_notebook():
+def build_and_save():
     """Build and save the notebook."""
     nb = build_notebook()
     
     # Validate
-    from nbformat.validator import validate
-    
-    print("Validating notebook...")
-    errors = nbf.validator.validate(nb)
+    from nbformat import validate
+    errors = validate(nb)
     if errors:
         print(f"Validation errors: {errors}")
         return False
@@ -702,12 +527,12 @@ def build_notebook():
     with open(output_path, 'w', encoding='utf-8') as f:
         nbf.write(nb, f)
     
-    print(f"Notebook saved to: kaggle_train_production.ipynb")
+    print(f"Notebook saved to: {output_path}")
     return True
 
 
 if __name__ == '__main__':
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
-    success = build_notebook()
+    success = build_and_save()
     sys.exit(0 if success else 1)
