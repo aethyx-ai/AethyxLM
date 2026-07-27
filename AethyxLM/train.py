@@ -6,15 +6,19 @@ import json
 import argparse
 import subprocess
 import platform
+import os
 from pathlib import Path
 from datetime import datetime
 
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from model.gpt import GPT
 from model.config import VOCAB_SIZE, CONTEXT_LENGTH, NUM_LAYERS
-from dataset.dataset import AethyxDataset
+from tokenizer.tokenizer import AethyxTokenizer
+from dataset.dataset import AethyxDataset, worker_init_fn
 from training.trainer import Trainer
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
@@ -97,6 +101,34 @@ def save_run_config(config: dict, log_dir: Path, git_hash: str):
     return run_config_path
 
 
+def setup_ddp():
+    """Initialize Distributed Data Parallel."""
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        rank = int(os.environ['RANK'])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    else:
+        # Default to single GPU if not set
+        rank = 0
+        world_size = 1
+        local_rank = 0
+    
+    if world_size > 1:
+        dist.init_process_group(backend='nccl')
+        torch.cuda.set_device(local_rank)
+        device = f'cuda:{local_rank}'
+        print(f"DDP initialized: rank={rank}, world_size={world_size}, local_rank={local_rank}, device={device}")
+        return rank, world_size, local_rank, device, True
+    else:
+        return rank, world_size, local_rank, 'cuda' if torch.cuda.is_available() else 'cpu', False
+
+
+def cleanup_ddp():
+    """Cleanup DDP."""
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
 def download_tinystories(data_dir: Path):
     """Download TinyStories dataset from Hugging Face."""
     try:
@@ -133,15 +165,26 @@ def main():
                         help='Path to checkpoint to resume from')
     parser.add_argument('--device', type=str, default=None,
                         help='Device to train on (cuda/cpu)')
+    parser.add_argument('--ddp', action='store_true',
+                        help='Use Distributed Data Parallel (DDP)')
     args = parser.parse_args()
+    
+    # Setup DDP
+    rank, world_size, local_rank, device, is_ddp = setup_ddp()
+    if is_ddp:
+        print(f"Running with DDP: rank={rank}, world_size={world_size}")
+    
+    # Only print on rank 0
+    is_main_process = (rank == 0)
     
     # Load config
     config = load_config(args.config)
     
     # Set random seed for reproducibility
     seed = config.get('seed', 42)
-    set_seed(seed)
-    print(f"Random seed: {seed}")
+    set_seed(seed + rank)  # Different seed per rank
+    if is_main_process:
+        print(f"Random seed: {seed}")
     
     model_config = config['model']
     train_config = config['training']
@@ -151,61 +194,62 @@ def main():
     # Get git hash for reproducibility
     git_hash = get_git_commit_hash()
     
-    # Print config
-    print("=" * 60)
-    print("AethyxLM Training Configuration (Kaggle)")
-    print("=" * 60)
-    print(f"Model: {model_config['num_layers']} layers, {model_config['embed_dim']} dim, {model_config['num_heads']} heads")
-    print(f"Context: {model_config['context_length']}, Vocab: {model_config['vocab_size']}")
-    print(f"LR: {train_config['learning_rate']}, WD: {train_config['weight_decay']}")
-    print(f"Warmup: {train_config['warmup_steps']}, Max Steps: {train_config['max_steps']}")
-    print(f"Batch: {data_config['batch_size']}, Grad Accum: {train_config['grad_accum_steps']}")
-    print(f"AMP: {train_config['use_amp']}, Device: {args.device or 'auto'}")
-    print(f"Git commit: {git_hash}")
-    print("=" * 60)
+    # Print config (only on main process)
+    if is_main_process:
+        print("=" * 60)
+        print("AethyxLM Training Configuration (Kaggle)")
+        print("=" * 60)
+        print(f"Model: {model_config['num_layers']} layers, {model_config['embed_dim']} dim, {model_config['num_heads']} heads")
+        print(f"Context: {model_config['context_length']}, Vocab: {model_config['vocab_size']}")
+        print(f"LR: {train_config['learning_rate']}, WD: {train_config['weight_decay']}")
+        print(f"Warmup: {train_config['warmup_steps']}, Max Steps: {train_config['max_steps']}")
+        print(f"Batch: {data_config['batch_size']}, Grad Accum: {train_config['grad_accum_steps']}")
+        print(f"AMP: {train_config['use_amp']}, Device: {device}")
+        print(f"Git commit: {git_hash}")
+        print("=" * 60)
     
-    # Save run config for reproducibility
-    save_run_config(config, Path("logs"), git_hash)
+    # Save run config for reproducibility (only on main process)
+    if is_main_process:
+        save_run_config(config, Path("logs"), git_hash)
     
-    # Device - accept any CUDA GPU
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    # Load tokenizer first to get actual vocab size
+    if is_main_process:
+        print("Loading tokenizer...")
+    tokenizer = AethyxTokenizer()
+    actual_vocab_size = tokenizer.vocab_size
+    if is_main_process:
+        print(f"Tokenizer vocab size: {actual_vocab_size}")
     
-    # Verify CUDA if requested
-    if device == "cuda":
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but not available! Enable GPU in Kaggle settings (Accelerator -> GPU T4 x2)")
-        device_name = torch.cuda.get_device_name(0)
-        vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        print(f"GPU: {device_name} ({vram_gb:.1f} GB VRAM)")
-        # Accept any CUDA GPU
-        known_gpus = ['T4', 'L4', 'A100', 'V100', 'P100', 'K80', 'A10G']
-        if not any(g in device_name for g in known_gpus):
-            print(f"Note: GPU '{device_name}' not in common Kaggle types (T4, L4, A100, V100, P100, K80, A10G). Proceeding anyway...")
-    
-    print(f"Using device: {device}")
-    
-    # Create model
-    print("Creating model...")
-    model = GPT()
+    # Create model with actual vocab size
+    if is_main_process:
+        print("Creating model...")
+    model = GPT(vocab_size=actual_vocab_size)
     model.to(device)
     
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
+    # Wrap with DDP if using multi-GPU
+    if is_ddp:
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+    
+    # Count parameters (only on main process)
+    if is_main_process:
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
     
     # Download/prepare dataset only if local files are missing
-    print("Preparing dataset...")
+    if is_main_process:
+        print("Preparing dataset...")
     train_file = Path(data_config['train_file'])
     val_file = Path(data_config.get('val_file', 'data/val.txt'))
 
     if train_file.exists() and val_file.exists():
-        print(f"[OK] Local dataset found: {train_file} ({train_file.stat().st_size // 1_000_000} MB), "
-              f"{val_file} ({val_file.stat().st_size // 1_000_000} MB) — skipping HF Hub download.")
+        if is_main_process:
+            print(f"[OK] Local dataset found: {train_file} ({train_file.stat().st_size // 1_000_000} MB), "
+                  f"{val_file} ({val_file.stat().st_size // 1_000_000} MB) — skipping HF Hub download.")
     else:
-        print("Local dataset not found. Attempting to download from Hugging Face Hub...")
+        if is_main_process:
+            print("Local dataset not found. Attempting to download from Hugging Face Hub...")
         if not download_tinystories(Path("data")):
             if not train_file.exists():
                 raise FileNotFoundError(
@@ -213,8 +257,13 @@ def main():
                     "Either run the dataset-preparation cell first, or provide a data/train.txt file."
                 )
     
+    # Synchronize all processes after dataset preparation
+    if is_ddp:
+        dist.barrier()
+    
     # Create datasets
-    print("Loading datasets...")
+    if is_main_process:
+        print("Loading datasets...")
     train_dataset = AethyxDataset(
         text_path=data_config['train_file'],
         context_length=data_config['context_length'],
@@ -225,30 +274,52 @@ def main():
         context_length=data_config['context_length'],
     )
     
-    print(f"Train samples: {len(train_dataset)}")
-    print(f"Val samples: {len(val_dataset)}")
+    if is_main_process:
+        print(f"Train samples: {len(train_dataset)}")
+        print(f"Val samples: {len(val_dataset)}")
+    
+    # Create distributed samplers for DDP
+    if is_ddp:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset, num_replicas=world_size, rank=rank, shuffle=True
+        )
+        val_sampler = torch.utils.data.distributed.DistributedSampler(
+            val_dataset, num_replicas=world_size, rank=rank, shuffle=False
+        )
+        train_shuffle = False  # Sampler handles shuffling
+        val_shuffle = False
+    else:
+        train_sampler = None
+        val_sampler = None
+        train_shuffle = data_config.get('shuffle', True)
+        val_shuffle = False
     
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=data_config['batch_size'],
-        shuffle=data_config.get('shuffle', True),
+        shuffle=train_shuffle,
+        sampler=train_sampler,
         num_workers=data_config.get('num_workers', 2),
         drop_last=True,
         pin_memory=True,
+        worker_init_fn=worker_init_fn if data_config.get('num_workers', 0) > 0 else None,
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=data_config['batch_size'],
-        shuffle=False,
+        shuffle=val_shuffle,
+        sampler=val_sampler,
         num_workers=data_config.get('num_workers', 2),
         drop_last=True,
         pin_memory=True,
+        worker_init_fn=worker_init_fn if data_config.get('num_workers', 0) > 0 else None,
     )
     
-    # Create trainer
-    print("Initializing trainer...")
+    # Create trainer (only on main process for logging/checkpointing)
+    if is_main_process:
+        print("Initializing trainer...")
     trainer = Trainer(
         model=model,
         train_dataloader=train_loader,
@@ -262,7 +333,7 @@ def main():
         max_steps=train_config['max_steps'],
         min_lr_ratio=train_config['min_lr_ratio'],
         grad_accum_steps=train_config['grad_accum_steps'],
-        use_amp=train_config['use_amp'] and device == 'cuda',
+        use_amp=train_config['use_amp'] and device.startswith('cuda'),
         checkpoint_dir=checkpoint_config['checkpoint_dir'],
         log_interval=checkpoint_config['log_interval'],
         eval_interval=checkpoint_config['eval_interval'],
@@ -273,13 +344,19 @@ def main():
     
     # Resume from checkpoint if provided
     if args.resume:
-        print(f"Resuming from {args.resume}")
+        if is_main_process:
+            print(f"Resuming from {args.resume}")
         trainer.load_checkpoint(args.resume)
     
     # Train
-    print("Starting training...")
+    if is_main_process:
+        print("Starting training...")
     trainer.train()
-    print("Training complete!")
+    if is_main_process:
+        print("Training complete!")
+    
+    # Cleanup DDP
+    cleanup_ddp()
 
 
 if __name__ == "__main__":

@@ -9,8 +9,10 @@ from pathlib import Path
 import json
 import csv
 import random
+import os
 
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 
 from tokenizer.tokenizer import AethyxTokenizer
@@ -104,6 +106,13 @@ def read_text_file(path: Path) -> str:
         return path.read_text(encoding="utf-8")
 
 
+def worker_init_fn(worker_id: int):
+    """Initialize worker with unique seed."""
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 class AethyxDataset(Dataset):
     """
     Memory-efficient dataset that stores tokenised data as a memory-mapped
@@ -116,8 +125,6 @@ class AethyxDataset(Dataset):
     """
 
     def __init__(self, text_path, context_length=128, seed: int = 42):
-        import numpy as np
-
         self.context_length = context_length
         text_path = Path(text_path)
 
@@ -127,27 +134,41 @@ class AethyxDataset(Dataset):
         bin_path = text_path.with_suffix('.bin')
 
         if not bin_path.exists():
-            # --- First-time tokenisation ---
-            print(f"Tokenising {text_path} -> {bin_path} ...")
+            # --- First-time tokenisation (streaming to avoid OOM) ---
+            print(f"Tokenising {text_path} -> {bin_path} (streaming)...")
             tokenizer = AethyxTokenizer()
-            text = read_text_file(text_path)
-            token_ids = tokenizer.encode(text)
-            arr = np.array(token_ids, dtype=np.uint16)
-            arr.tofile(bin_path)
-            print(f"[OK] Saved {len(arr):,} tokens to {bin_path}")
-            del text, token_ids, arr
+            CHUNK_SIZE = 10_000_000  # tokens per write
+            total_tokens = 0
+            with open(bin_path, 'wb') as f_out:
+                with path.open('r', encoding='utf-8') as f_in:
+                    buffer = []
+                    for line in f_in:
+                        if not line.strip():
+                            continue
+                        ids = tokenizer.encode(line)
+                        buffer.extend(ids)
+                        if len(buffer) >= CHUNK_SIZE:
+                            arr = np.array(buffer[:CHUNK_SIZE], dtype=np.uint16)
+                            arr.tofile(f_out)
+                            total_tokens += len(arr)
+                            buffer = buffer[CHUNK_SIZE:]
+                    if buffer:
+                        arr = np.array(buffer, dtype=np.uint16)
+                        arr.tofile(f_out)
+                        total_tokens += len(arr)
+            print(f"[OK] Saved {total_tokens:,} tokens to {bin_path}")
 
         # --- Memory-map the .bin file ---
         self._data = np.memmap(bin_path, dtype=np.uint16, mode='r')
         print(f"[OK] mmap {bin_path}: {len(self._data):,} tokens")
 
+        self.seed = seed
         random.seed(seed)
 
     def __len__(self):
         return max(0, len(self._data) - self.context_length)
 
     def __getitem__(self, idx):
-        import numpy as np
         chunk = np.array(self._data[idx: idx + self.context_length + 1],
                          dtype=np.int64)
         x = torch.from_numpy(chunk[:-1])

@@ -363,72 +363,70 @@ class Trainer:
         tokens_per_step = self.train_dataloader.batch_size * 128  # CONTEXT_LENGTH
         
         while self.step < self.max_steps:
-            self.epoch += 1
-            
-            for batch in self.train_dataloader:
+                self.epoch += 1
+                
+                for batch in self.train_dataloader:
+                    if self.step >= self.max_steps:
+                        break
+                    
+                    loss = self.train_step(batch)
+                    running_loss += loss
+                    
+                    # Optimizer step after accumulation
+                    if (self.step + 1) % self.grad_accum_steps == 0:
+                        self.optimizer_step()
+                    
+                    # Logging
+                    if self.step % self.log_interval == 0:
+                        elapsed = time.time() - step_start_time
+                        lr = self.optimizer.param_groups[0]["lr"]
+                        avg_loss = running_loss / self.log_interval
+                        tokens_per_sec = (self.log_interval * self.train_dataloader.batch_size * 128) / elapsed
+                        
+                        print(
+                            f"Step {self.step}/{self.max_steps} | "
+                            f"Loss: {running_loss / self.log_interval:.4f} | "
+                            f"LR: {lr:.2e} | "
+                            f"Tok/s: {tokens_per_sec:.0f} | "
+                            f"GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB | "
+                            f"Time: {elapsed:.1f}s"
+                        )
+                        
+                        if self.writer:
+                            self.writer.add_scalar("train/loss", avg_loss, self.step)
+                            self.writer.add_scalar("train/lr", lr, self.step)
+                            self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
+                            self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
+                        
+                        running_loss = 0.0
+                        step_start_time = time.time()
+                    
+                    # Validation
+                    if self.val_dataloader and self.step % self.eval_interval == 0:
+                        val_loss = self.evaluate()
+                        print(f"Validation Loss: {val_loss:.4f}")
+                        
+                        if self.writer:
+                            self.writer.add_scalar("val/loss", val_loss, self.step)
+                        
+                        is_best = val_loss < self.best_val_loss
+                        if is_best:
+                            self.best_val_loss = val_loss
+                        
+                        # Save checkpoint at eval interval (with best flag)
+                        self._save_checkpoint(is_best=is_best)
+                    
+                    # Periodic checkpoint (only at save_interval)
+                    if self.step % self.save_interval == 0:
+                        self._save_checkpoint(is_best=False)
+                    
+                    self.step += 1
+                    
+                    if self.step >= self.max_steps:
+                        break
+                
                 if self.step >= self.max_steps:
                     break
-                
-                loss = self.train_step(batch)
-                running_loss += loss
-                
-                # Optimizer step after accumulation
-                if (self.step + 1) % self.grad_accum_steps == 0:
-                    self.optimizer_step()
-                
-                self.step += 1
-                
-                # Logging
-                if self.step % self.log_interval == 0:
-                    elapsed = time.time() - step_start_time
-                    lr = self.optimizer.param_groups[0]["lr"]
-                    avg_loss = running_loss / self.log_interval
-                    tokens_per_sec = (self.log_interval * self.train_dataloader.batch_size * 128) / elapsed
-                    
-                    print(
-                        f"Step {self.step}/{self.max_steps} | "
-                        f"Loss: {running_loss / self.log_interval:.4f} | "
-                        f"LR: {lr:.2e} | "
-                        f"Tok/s: {tokens_per_sec:.0f} | "
-                        f"GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB | "
-                        f"Time: {elapsed:.1f}s"
-                    )
-                    
-                    if self.writer:
-                        self.writer.add_scalar("train/loss", avg_loss, self.step)
-                        self.writer.add_scalar("train/lr", lr, self.step)
-                        self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
-                        self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
-                    
-                    running_loss = 0.0
-                    step_start_time = time.time()
-                
-                # Validation
-                if self.val_dataloader and self.step % self.eval_interval == 0:
-                    val_loss = self.evaluate()
-                    print(f"Validation Loss: {val_loss:.4f}")
-                    
-                    if self.writer:
-                        self.writer.add_scalar("val/loss", val_loss, self.step)
-                    
-                    is_best = val_loss < self.best_val_loss
-                    if is_best:
-                        self.best_val_loss = val_loss
-                    
-                    # Save checkpoint at eval interval (with best flag)
-                    self._save_checkpoint(is_best=(val_loss < self.best_val_loss))
-                
-                # Periodic checkpoint (only at save_interval)
-                if self.step % self.save_interval == 0:
-                    self._save_checkpoint(is_best=False)
-                
-                self.step += 1
-                
-                if self.step >= self.max_steps:
-                    break
-            
-            if self.step >= self.max_steps:
-                break
         
         # Final checkpoint
         self._save_checkpoint(is_best=False, force=True)

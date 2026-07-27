@@ -6,15 +6,9 @@ import torch
 import torch.nn as nn
 
 from .config import (
-    VOCAB_SIZE,
     EMBED_DIM,
     NUM_LAYERS,
 )
-
-from .embedding import TokenEmbedding
-from .positional_embedding import PositionalEmbedding
-from .transformer_block import TransformerBlock
-from .layer_norm import LayerNorm
 
 
 class GPT(nn.Module):
@@ -22,25 +16,30 @@ class GPT(nn.Module):
     Decoder-only GPT Language Model.
     """
 
-    def __init__(self):
+    def __init__(self, vocab_size: int = None):
         super().__init__()
+
+        if vocab_size is None:
+            from .config import VOCAB_SIZE
+            vocab_size = VOCAB_SIZE
 
         # ----------------------------------------
         # Token Embedding
         # ----------------------------------------
 
-        self.token_embedding = TokenEmbedding()
+        self.token_embedding = nn.Embedding(vocab_size, EMBED_DIM)
 
         # ----------------------------------------
         # Positional Embedding
         # ----------------------------------------
 
-        self.position_embedding = PositionalEmbedding()
+        self.position_embedding = nn.Embedding(128, EMBED_DIM)
 
         # ----------------------------------------
         # Transformer Blocks
         # ----------------------------------------
 
+        from .transformer_block import TransformerBlock
         self.layers = nn.ModuleList(
             [
                 TransformerBlock()
@@ -52,6 +51,7 @@ class GPT(nn.Module):
         # Final Layer Normalization
         # ----------------------------------------
 
+        from .layer_norm import LayerNorm
         self.final_norm = LayerNorm(EMBED_DIM)
 
         # ----------------------------------------
@@ -60,12 +60,12 @@ class GPT(nn.Module):
 
         self.lm_head = nn.Linear(
             EMBED_DIM,
-            VOCAB_SIZE,
+            vocab_size,
             bias=False,
         )
 
         #Share embedding weights with output layer
-        self.lm_head.weight = self.token_embedding.embedding.weight
+        self.lm_head.weight = self.token_embedding.weight
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         """
@@ -90,7 +90,9 @@ class GPT(nn.Module):
         # Add Positional Embeddings
         # ----------------------------------------
 
-        x = x + self.position_embedding(x)
+        seq_len = input_ids.size(1)
+        positions = torch.arange(seq_len, device=input_ids.device, dtype=torch.long)
+        x = x + self.position_embedding(positions)
 
         # ----------------------------------------
         # Transformer Blocks
