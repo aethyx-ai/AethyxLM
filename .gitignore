@@ -27,6 +27,7 @@ checkpoints/
 # OS
 Thumbs.db
 .DS_Store
+AethyxLM/data/*.txt
 
 #Archives
 *.zip
