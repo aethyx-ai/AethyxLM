@@ -6,8 +6,13 @@ Author: Aethyx Labs
 """
 
 import json
+import os
+import sys
 import time
 from pathlib import Path
+
+# Ensure project root is on sys.path for package imports (needed by subprocesses)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
