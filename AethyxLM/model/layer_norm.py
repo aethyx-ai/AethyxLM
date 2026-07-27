@@ -26,9 +26,15 @@ class LayerNorm(nn.Module):
 
     def __init__(
         self,
-        embed_dim: int = EMBED_DIM,
-        eps: float = LAYER_NORM_EPS,
+        embed_dim: int = None,
+        eps: float = None,
     ):
+        super().__init__()
+
+        if embed_dim is None:
+            embed_dim = EMBED_DIM
+        if eps is None:
+            eps = LAYER_NORM_EPS
         super().__init__()
 
         self.embed_dim = embed_dim

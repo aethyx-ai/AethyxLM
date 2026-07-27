@@ -133,14 +133,14 @@ class AethyxDataset(Dataset):
 
         bin_path = text_path.with_suffix('.bin')
 
-        if not bin_path.exists():
+        if not bin_path.exists() or bin_path.stat().st_size == 0:
             # --- First-time tokenisation (streaming to avoid OOM) ---
             print(f"Tokenising {text_path} -> {bin_path} (streaming)...")
             tokenizer = AethyxTokenizer()
             CHUNK_SIZE = 10_000_000  # tokens per write
             total_tokens = 0
             with open(bin_path, 'wb') as f_out:
-                with path.open('r', encoding='utf-8') as f_in:
+                with text_path.open('r', encoding='utf-8') as f_in:
                     buffer = []
                     for line in f_in:
                         if not line.strip():

@@ -19,6 +19,8 @@ def set_seed(seed: int = 42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     
-    # Deterministic settings (may impact performance)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    # Allow cuDNN auto-tuner for better performance
+    torch.backends.cudnn.benchmark = True
+    # Note: For exact reproducibility, set benchmark=False and deterministic=True
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False

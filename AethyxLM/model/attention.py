@@ -64,11 +64,24 @@ class MultiHeadSelfAttention(nn.Module):
 
     def __init__(
         self,
-        embed_dim: int = EMBED_DIM,
-        num_heads: int = NUM_HEADS,
-        dropout: float = DROPOUT,
+        embed_dim: int = None,
+        num_heads: int = None,
+        dropout: float = None,
+        context_length: int = None,
+        use_bias: bool = None,
     ):
         super().__init__()
+
+        if embed_dim is None:
+            embed_dim = EMBED_DIM
+        if num_heads is None:
+            num_heads = NUM_HEADS
+        if dropout is None:
+            dropout = DROPOUT
+        if context_length is None:
+            context_length = CONTEXT_LENGTH
+        if use_bias is None:
+            use_bias = USE_BIAS
 
         if embed_dim % num_heads != 0:
             raise ValueError(
@@ -86,19 +99,19 @@ class MultiHeadSelfAttention(nn.Module):
         self.q_proj = Linear(
             embed_dim,
             embed_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         self.k_proj = Linear(
             embed_dim,
             embed_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         self.v_proj = Linear(
             embed_dim,
             embed_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         # --------------------------------------------------
@@ -108,7 +121,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.out_proj = Linear(
             embed_dim,
             embed_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         self.dropout = nn.Dropout(dropout)
@@ -119,8 +132,8 @@ class MultiHeadSelfAttention(nn.Module):
 
         mask = torch.tril(
             torch.ones(
-                CONTEXT_LENGTH,
-                CONTEXT_LENGTH,
+                context_length,
+                context_length,
             )
         )
 

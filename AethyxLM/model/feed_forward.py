@@ -31,16 +31,26 @@ class FeedForward(nn.Module):
 
     def __init__(
         self,
-        embed_dim: int = EMBED_DIM,
-        hidden_dim: int = FFN_DIM,
-        dropout: float = DROPOUT,
+        embed_dim: int = None,
+        hidden_dim: int = None,
+        dropout: float = None,
+        use_bias: bool = None,
     ):
         super().__init__()
+
+        if embed_dim is None:
+            embed_dim = EMBED_DIM
+        if hidden_dim is None:
+            hidden_dim = FFN_DIM
+        if dropout is None:
+            dropout = DROPOUT
+        if use_bias is None:
+            use_bias = USE_BIAS
 
         self.fc1 = Linear(
             embed_dim,
             hidden_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         self.activation = nn.GELU()
@@ -48,7 +58,7 @@ class FeedForward(nn.Module):
         self.fc2 = Linear(
             hidden_dim,
             embed_dim,
-            bias=USE_BIAS,
+            bias=use_bias,
         )
 
         self.dropout = nn.Dropout(dropout)

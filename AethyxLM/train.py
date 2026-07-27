@@ -212,13 +212,20 @@ def main():
     if is_main_process:
         save_run_config(config, Path("logs"), git_hash)
     
-    # Load tokenizer first to get actual vocab size
+    # Load tokenizer first to get actual vocab size (only on rank 0)
     if is_main_process:
         print("Loading tokenizer...")
-    tokenizer = AethyxTokenizer()
-    actual_vocab_size = tokenizer.vocab_size
-    if is_main_process:
+        tokenizer = AethyxTokenizer()
+        actual_vocab_size = tokenizer.vocab_size
         print(f"Tokenizer vocab size: {actual_vocab_size}")
+    else:
+        actual_vocab_size = None
+    
+    # Broadcast vocab size to all ranks
+    if is_ddp:
+        vocab_tensor = torch.tensor([actual_vocab_size] if is_main_process else [0], device=device)
+        dist.broadcast(vocab_tensor, src=0)
+        actual_vocab_size = vocab_tensor.item()
     
     # Create model with actual vocab size
     if is_main_process:
@@ -261,7 +268,39 @@ def main():
     if is_ddp:
         dist.barrier()
     
-    # Create datasets
+    # Tokenize on rank 0 ONLY, then all ranks load
+    if is_main_process:
+        print("Tokenizing datasets (rank 0)...")
+        # Remove any existing empty .bin files to force re-tokenization
+        for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+            bin_f = Path(f).with_suffix('.bin')
+            if bin_f.exists() and bin_f.stat().st_size == 0:
+                print(f"  Removing empty .bin file: {bin_f}")
+                bin_f.unlink()
+        
+        train_ds = AethyxDataset(
+            text_path=data_config['train_file'],
+            context_length=data_config['context_length'],
+        )
+        print(f"Train tokens: {len(train_ds._data):,}")
+        val_ds = AethyxDataset(
+            text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
+            context_length=data_config['context_length'],
+        )
+        print(f"Val tokens: {len(val_ds._data):,}")
+        # Verify .bin files exist and non-empty
+        import os
+        for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+            bin_f = str(Path(f).with_suffix('.bin'))
+            size = os.path.getsize(bin_f)
+            print(f"  {bin_f}: {size:,} bytes")
+            if size == 0:
+                raise RuntimeError(f"Empty .bin file after tokenization: {bin_f}")
+    
+    if is_ddp:
+        dist.barrier()
+    
+    # Now create datasets on all ranks (will use existing .bin files)
     if is_main_process:
         print("Loading datasets...")
     train_dataset = AethyxDataset(

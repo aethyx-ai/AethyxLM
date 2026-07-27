@@ -46,20 +46,40 @@ class TransformerBlock(nn.Module):
         (batch_size, sequence_length, embed_dim)
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        embed_dim: int = None,
+        num_heads: int = None,
+        ffn_dim: int = None,
+        dropout: float = None,
+        context_length: int = None,
+        use_bias: bool = None,
+        layer_norm_eps: float = None,
+    ):
         super().__init__()
 
         # First LayerNorm
-        self.norm1 = LayerNorm()
+        self.norm1 = LayerNorm(embed_dim=embed_dim, eps=layer_norm_eps)
 
         # Self-Attention
-        self.attention = MultiHeadSelfAttention()
+        self.attention = MultiHeadSelfAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            context_length=context_length,
+            use_bias=use_bias,
+        )
 
         # Second LayerNorm
-        self.norm2 = LayerNorm()
+        self.norm2 = LayerNorm(embed_dim=embed_dim, eps=layer_norm_eps)
 
         # Feed Forward Network
-        self.feed_forward = FeedForward()
+        self.feed_forward = FeedForward(
+            embed_dim=embed_dim,
+            hidden_dim=ffn_dim,
+            dropout=dropout,
+            use_bias=use_bias,
+        )
 
     def forward(
         self,

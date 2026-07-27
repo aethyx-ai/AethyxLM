@@ -216,7 +216,7 @@ class Trainer:
         ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long, device=self.device)
         
         for _ in range(max_new_tokens):
-            logits = self.model(ids[:, -128:])  # Crop to context length
+            logits = self.model(ids[:, -CONTEXT_LENGTH:])  # Crop to context length
             logits = logits[:, -1, :] / temperature
             
             if top_k > 0:
@@ -228,8 +228,6 @@ class Trainer:
             ids = torch.cat([ids, next_id], dim=1)
         
         self.model.train()
-        from tokenizer.tokenizer import AethyxTokenizer
-        tokenizer = AethyxTokenizer()
         return tokenizer.decode(ids[0].tolist())
 
     def log_generated_sample(self, step: int, loss: float, prompt: str = "Once upon a time"):
