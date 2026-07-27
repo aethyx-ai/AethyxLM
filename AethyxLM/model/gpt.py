@@ -5,7 +5,7 @@ Complete GPT model for AethyxLM.
 import torch
 import torch.nn as nn
 
-from .config import (
+from model.config import (
     EMBED_DIM,
     NUM_LAYERS,
     CONTEXT_LENGTH,
@@ -22,7 +22,7 @@ class GPT(nn.Module):
         super().__init__()
 
         # Merge defaults from config.py with overrides from config dict
-        from .config import (
+        from model.config import (
             VOCAB_SIZE as DEFAULT_VOCAB_SIZE,
             CONTEXT_LENGTH as DEFAULT_CONTEXT_LENGTH,
             EMBED_DIM as DEFAULT_EMBED_DIM,
@@ -69,7 +69,7 @@ class GPT(nn.Module):
         # Transformer Blocks
         # ----------------------------------------
 
-        from .transformer_block import TransformerBlock
+        from model.transformer_block import TransformerBlock
         self.layers = nn.ModuleList(
             [
                 TransformerBlock(
@@ -89,7 +89,7 @@ class GPT(nn.Module):
         # Final Layer Normalization
         # ----------------------------------------
 
-        from .layer_norm import LayerNorm
+        from model.layer_norm import LayerNorm
         self.final_norm = LayerNorm(self.embed_dim, eps=self.layer_norm_eps)
 
         # ----------------------------------------

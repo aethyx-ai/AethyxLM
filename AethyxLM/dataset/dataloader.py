@@ -6,14 +6,14 @@ Creates PyTorch DataLoaders for training.
 
 from torch.utils.data import DataLoader
 
-from .config import (
+from dataset.config import (
     DATA_FILE,
     CONTEXT_LENGTH,
     BATCH_SIZE,
     NUM_WORKERS,
     SHUFFLE,
 )
-from .dataset import AethyxDataset
+from dataset.dataset import AethyxDataset
 
 
 def create_dataloader():

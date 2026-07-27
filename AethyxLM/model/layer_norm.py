@@ -7,7 +7,7 @@ Normalizes each token across its embedding dimension.
 import torch
 import torch.nn as nn
 
-from .config import (
+from model.config import (
     EMBED_DIM,
     LAYER_NORM_EPS,
 )

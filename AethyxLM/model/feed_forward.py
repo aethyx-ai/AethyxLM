@@ -8,14 +8,14 @@ self-attention layer.
 import torch
 import torch.nn as nn
 
-from .config import (
+from model.config import (
     EMBED_DIM,
     FFN_DIM,
     DROPOUT,
     USE_BIAS,
 )
 
-from .layers import Linear
+from model.layers import Linear
 
 
 class FeedForward(nn.Module):

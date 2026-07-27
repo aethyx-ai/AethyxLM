@@ -39,7 +39,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .config import (
+from model.config import (
     EMBED_DIM,
     NUM_HEADS,
     HEAD_DIM,
@@ -48,7 +48,7 @@ from .config import (
     USE_BIAS,
 )
 
-from .layers import Linear
+from model.layers import Linear
 
 
 class MultiHeadSelfAttention(nn.Module):

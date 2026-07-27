@@ -9,7 +9,7 @@ from pathlib import Path
 
 from tokenizers import Tokenizer
 
-from .config import TOKENIZER_FILE
+from tokenizer.config import TOKENIZER_FILE
 
 
 class AethyxTokenizer:

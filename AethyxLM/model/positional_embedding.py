@@ -5,7 +5,7 @@ Learnable Positional Embedding Layer for AethyxLM.
 import torch
 import torch.nn as nn
 
-from .config import CONTEXT_LENGTH, EMBED_DIM
+from model.config import CONTEXT_LENGTH, EMBED_DIM
 
 
 class PositionalEmbedding(nn.Module):

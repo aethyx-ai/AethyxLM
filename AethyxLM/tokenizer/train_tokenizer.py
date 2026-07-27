@@ -15,7 +15,7 @@ from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.trainers import BpeTrainer
 from tokenizers.normalizers import Sequence, NFD, Lowercase, StripAccents
 
-from .config import (
+from tokenizer.config import (
     CORPUS_FILE,
     TOKENIZER_FILE,
     VOCAB_SIZE,

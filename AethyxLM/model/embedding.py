@@ -5,7 +5,7 @@ Token Embedding Layer for AethyxLM.
 import torch
 import torch.nn as nn
 
-from .config import VOCAB_SIZE, EMBED_DIM
+from model.config import VOCAB_SIZE, EMBED_DIM
 
 
 class TokenEmbedding(nn.Module):

@@ -30,9 +30,9 @@ Output
 import torch
 import torch.nn as nn
 
-from .attention import MultiHeadSelfAttention
-from .feed_forward import FeedForward
-from .layer_norm import LayerNorm
+from model.attention import MultiHeadSelfAttention
+from model.feed_forward import FeedForward
+from model.layer_norm import LayerNorm
 
 
 class TransformerBlock(nn.Module):
