@@ -1,47 +1,53 @@
 {
-    "seed": 42,
-    "model": {
-        "vocab_size": 32000,
-        "context_length": 128,
-        "embed_dim": 256,
-        "num_heads": 8,
-        "num_layers": 8,
-        "ffn_dim": 1024,
-        "dropout": 0.1,
-        "use_bias": true,
-        "layer_norm_eps": 1e-05
-    },
-    "training": {
-        "learning_rate": 3e-4,
-        "weight_decay": 0.1,
-        "betas": [0.9, 0.95],
-        "eps": 1e-8,
-        "grad_clip": 1.0,
-        "warmup_steps": 1000,
-        "max_steps": 20000,
-        "min_lr_ratio": 0.1,
-        "grad_accum_steps": 1,
-        "use_amp": true,
-        "batch_size": 32,
-        "num_workers": 2
-    },
-    "data": {
-        "train_file": "data/train.txt",
-        "val_file": "data/val.txt",
-        "context_length": 128,
-        "batch_size": 32,
-        "num_workers": 2,
-        "shuffle": true
-    },
-    "checkpoint": {
-        "checkpoint_dir": "checkpoints",
-        "log_interval": 100,
-        "eval_interval": 1000,
-        "save_interval": 1000,
-        "generate_interval": 1000
-    },
-    "tokenizer": {
-        "tokenizer_file": "tokenizer/tokenizer.json",
-        "vocab_size": 32000
-    }
+  "seed": 42,
+  "model": {
+    "vocab_size": 32000,
+    "context_length": 128,
+    "embed_dim": 128,
+    "num_heads": 8,
+    "num_layers": 4,
+    "ffn_dim": 1024,
+    "dropout": 0.1,
+    "use_bias": true,
+    "layer_norm_eps": 1e-05
+  },
+  "training": {
+    "learning_rate": 0.0003,
+    "weight_decay": 0.1,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "eps": 1e-08,
+    "grad_clip": 1.0,
+    "warmup_steps": 1000,
+    "max_steps": 20000,
+    "min_lr_ratio": 0.1,
+    "grad_accum_steps": 4,
+    "use_amp": true,
+    "batch_size": 2,
+    "num_workers": 0,
+    "eval_interval": 500,
+    "save_interval": 1000,
+    "log_interval": 50,
+    "generate_interval": 500
+  },
+  "data": {
+    "train_file": "data/train.txt",
+    "val_file": "data/val.txt",
+    "context_length": 128,
+    "batch_size": 4,
+    "num_workers": 0,
+    "shuffle": true
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints",
+    "log_interval": 10,
+    "eval_interval": 5,
+    "save_interval": 10
+  },
+  "tokenizer": {
+    "tokenizer_file": "tokenizer/tokenizer.json",
+    "vocab_size": 32000
+  }
 }

@@ -196,12 +196,22 @@ def main():
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
     
-    # Download/prepare dataset
+    # Download/prepare dataset only if local files are missing
     print("Preparing dataset...")
-    if not download_tinystories(Path("data")):
-        # Fallback: check if local files exist
-        if not Path(data_config['train_file']).exists():
-            raise FileNotFoundError(f"Training data not found: {data_config['train_file']}. Run download first or provide data.")
+    train_file = Path(data_config['train_file'])
+    val_file = Path(data_config.get('val_file', 'data/val.txt'))
+
+    if train_file.exists() and val_file.exists():
+        print(f"[OK] Local dataset found: {train_file} ({train_file.stat().st_size // 1_000_000} MB), "
+              f"{val_file} ({val_file.stat().st_size // 1_000_000} MB) — skipping HF Hub download.")
+    else:
+        print("Local dataset not found. Attempting to download from Hugging Face Hub...")
+        if not download_tinystories(Path("data")):
+            if not train_file.exists():
+                raise FileNotFoundError(
+                    f"Training data not found at '{train_file}'. "
+                    "Either run the dataset-preparation cell first, or provide a data/train.txt file."
+                )
     
     # Create datasets
     print("Loading datasets...")

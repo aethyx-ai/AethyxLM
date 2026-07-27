@@ -105,40 +105,51 @@ def read_text_file(path: Path) -> str:
 
 
 class AethyxDataset(Dataset):
+    """
+    Memory-efficient dataset that stores tokenised data as a memory-mapped
+    numpy uint16 array (.bin file) instead of keeping everything in RAM.
+
+    On first run it reads the .txt file, tokenises it, and saves a companion
+    `<name>.bin` file alongside the text file.  Subsequent runs skip
+    tokenisation and mmap the .bin directly — startup goes from ~30 s to <1 s
+    and RAM usage stays constant regardless of dataset size.
+    """
 
     def __init__(self, text_path, context_length=128, seed: int = 42):
+        import numpy as np
 
-        self.tokenizer = AethyxTokenizer()
-
+        self.context_length = context_length
         text_path = Path(text_path)
 
         if not text_path.exists():
             raise FileNotFoundError(text_path)
 
-        text = read_text_file(text_path)
+        bin_path = text_path.with_suffix('.bin')
 
-        self.tokens = self.tokenizer.encode(text)
+        if not bin_path.exists():
+            # --- First-time tokenisation ---
+            print(f"Tokenising {text_path} -> {bin_path} ...")
+            tokenizer = AethyxTokenizer()
+            text = read_text_file(text_path)
+            token_ids = tokenizer.encode(text)
+            arr = np.array(token_ids, dtype=np.uint16)
+            arr.tofile(bin_path)
+            print(f"[OK] Saved {len(arr):,} tokens to {bin_path}")
+            del text, token_ids, arr
 
-        self.context_length = context_length
+        # --- Memory-map the .bin file ---
+        self._data = np.memmap(bin_path, dtype=np.uint16, mode='r')
+        print(f"[OK] mmap {bin_path}: {len(self._data):,} tokens")
 
-        # Deterministic seed for reproducibility
         random.seed(seed)
 
     def __len__(self):
-
-        return len(self.tokens) - self.context_length
+        return max(0, len(self._data) - self.context_length)
 
     def __getitem__(self, idx):
-
-        x = self.tokens[
-            idx: idx + self.context_length
-        ]
-
-        y = self.tokens[
-            idx + 1: idx + self.context_length + 1
-        ]
-
-        return (
-            torch.tensor(x, dtype=torch.long),
-            torch.tensor(y, dtype=torch.long),
-        )
+        import numpy as np
+        chunk = np.array(self._data[idx: idx + self.context_length + 1],
+                         dtype=np.int64)
+        x = torch.from_numpy(chunk[:-1])
+        y = torch.from_numpy(chunk[1:])
+        return x, y
