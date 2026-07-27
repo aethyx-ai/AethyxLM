@@ -7,8 +7,12 @@ import argparse
 import subprocess
 import platform
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
+
+# Ensure project root is on sys.path for package imports (needed by torchrun)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import torch
 import torch.distributed as dist
