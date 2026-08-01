@@ -31,3 +31,6 @@ AethyxLM/data/*.txt
 
 #Archives
 *.zip
+
+#Kilo
+.kilo/
