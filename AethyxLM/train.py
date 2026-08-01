@@ -379,7 +379,7 @@ def main():
         use_amp=train_config['use_amp'] and device.startswith('cuda'),
         checkpoint_dir=checkpoint_config['checkpoint_dir'],
         log_interval=checkpoint_config['log_interval'],
-        eval_interval=checkpoint_config['eval_interval'],
+        eval_interval=train_config['eval_interval'],
         save_interval=checkpoint_config['save_interval'],
         generate_interval=train_config.get('generate_interval', 1000),
         device=device,

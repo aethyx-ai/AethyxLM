@@ -3,7 +3,7 @@ from model.gpt import GPT
 from tokenizer.tokenizer import AethyxTokenizer
 
 # Load model
-ckpt = torch.load('checkpoints/checkpoint_step_3090.pt', map_location='cpu', weights_only=False)
+ckpt = torch.load('checkpoints/checkpoint_latest.pt', map_location='cpu', weights_only=False)
 model = GPT()
 model.load_state_dict(ckpt['model_state_dict'])
 model.eval()

@@ -354,32 +354,51 @@ class Trainer:
         print(f"Gradient accumulation: {self.grad_accum_steps}")
         print(f"Mixed precision: {self.use_amp}")
         print(f"Checkpoint dir: {self.checkpoint_dir}")
+        print(f"[DEBUG] eval_interval={self.eval_interval}, save_interval={self.save_interval}, log_interval={self.log_interval}")
+        
+        # CUDA warmup - run a few forward passes to trigger kernel compilation
+        if self.device.startswith('cuda'):
+            print("Running CUDA warmup...")
+            self.model.train()
+            dummy = torch.randint(0, self.model.vocab_size, (self.train_dataloader.batch_size, self.model.context_length), device=self.device)
+            with torch.amp.autocast('cuda', enabled=self.use_amp):
+                for _ in range(3):
+                    _ = self.model(dummy)
+            torch.cuda.synchronize()
+            print("CUDA warmup complete.")
         
         self.model.train()
         running_loss = 0.0
         step_start_time = time.time()
-        tokens_per_step = self.train_dataloader.batch_size * 128  # CONTEXT_LENGTH
+        tokens_per_step = self.train_dataloader.batch_size * self.model.context_length
+        
+        print("[DEBUG] Entered training loop", flush=True)
         
         while self.step < self.max_steps:
                 self.epoch += 1
+                print(f"[DEBUG] Epoch {self.epoch} started", flush=True)
                 
                 for batch in self.train_dataloader:
                     if self.step >= self.max_steps:
                         break
                     
+                    print(f"[DEBUG] Step {self.step}: calling train_step", flush=True)
                     loss = self.train_step(batch)
                     running_loss += loss
+                    print(f"[DEBUG] Step {self.step}: train_step done, loss={loss:.4f}", flush=True)
                     
                     # Optimizer step after accumulation
                     if (self.step + 1) % self.grad_accum_steps == 0:
+                        print(f"[DEBUG] Step {self.step}: calling optimizer_step", flush=True)
                         self.optimizer_step()
+                        print(f"[DEBUG] Step {self.step}: optimizer_step done", flush=True)
                     
                     # Logging
                     if self.step % self.log_interval == 0:
                         elapsed = time.time() - step_start_time
                         lr = self.optimizer.param_groups[0]["lr"]
                         avg_loss = running_loss / self.log_interval
-                        tokens_per_sec = (self.log_interval * self.train_dataloader.batch_size * 128) / elapsed
+                        tokens_per_sec = (self.log_interval * self.train_dataloader.batch_size * self.model.context_length) / elapsed
                         
                         print(
                             f"Step {self.step}/{self.max_steps} | "
@@ -400,8 +419,10 @@ class Trainer:
                         step_start_time = time.time()
                     
                     # Validation
-                    if self.val_dataloader and self.step % self.eval_interval == 0:
+                    if self.val_dataloader and self.step > 0 and self.step % self.eval_interval == 0:
+                        print(f"[DEBUG] Step {self.step}: entering evaluation (eval_interval={self.eval_interval})", flush=True)
                         val_loss = self.evaluate()
+                        print(f"[DEBUG] Step {self.step}: leaving evaluation, val_loss={val_loss:.4f}", flush=True)
                         print(f"Validation Loss: {val_loss:.4f}")
                         
                         if self.writer:
@@ -412,13 +433,19 @@ class Trainer:
                             self.best_val_loss = val_loss
                         
                         # Save checkpoint at eval interval (with best flag)
+                        print(f"[DEBUG] Step {self.step}: saving checkpoint (eval)", flush=True)
                         self._save_checkpoint(is_best=is_best)
+                        print(f"[DEBUG] Step {self.step}: checkpoint saved", flush=True)
                     
                     # Periodic checkpoint (only at save_interval)
                     if self.step % self.save_interval == 0:
+                        print(f"[DEBUG] Step {self.step}: saving checkpoint (periodic)", flush=True)
                         self._save_checkpoint(is_best=False)
+                        print(f"[DEBUG] Step {self.step}: checkpoint saved", flush=True)
                     
+                    print(f"[DEBUG] Step {self.step}: incrementing step to {self.step + 1}", flush=True)
                     self.step += 1
+                    print(f"[DEBUG] Step now: {self.step}", flush=True)
                     
                     if self.step >= self.max_steps:
                         break
