@@ -22,7 +22,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from model.gpt import GPT
 from model.config import VOCAB_SIZE, CONTEXT_LENGTH, NUM_LAYERS
 from tokenizer.tokenizer import AethyxTokenizer
-from dataset.dataset import AethyxDataset, worker_init_fn
+from dataset.dataset import AethyxDataset, MixedAethyxDataset, worker_init_fn
 from training.trainer import Trainer
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
@@ -251,75 +251,164 @@ def main():
     # Download/prepare dataset only if local files are missing
     if is_main_process:
         print("Preparing dataset...")
-    train_file = Path(data_config['train_file'])
-    val_file = Path(data_config.get('val_file', 'data/val.txt'))
-
-    if train_file.exists() and val_file.exists():
-        if is_main_process:
-            print(f"[OK] Local dataset found: {train_file} ({train_file.stat().st_size // 1_000_000} MB), "
-                  f"{val_file} ({val_file.stat().st_size // 1_000_000} MB) — skipping HF Hub download.")
-    else:
-        if is_main_process:
-            print("Local dataset not found. Attempting to download from Hugging Face Hub...")
-        if not download_tinystories(Path("data")):
-            if not train_file.exists():
-                raise FileNotFoundError(
-                    f"Training data not found at '{train_file}'. "
-                    "Either run the dataset-preparation cell first, or provide a data/train.txt file."
-                )
     
-    # Synchronize all processes after dataset preparation
-    if is_ddp:
-        dist.barrier()
-    
-    # Tokenize on rank 0 ONLY, then all ranks load
-    if is_main_process:
-        print("Tokenizing datasets (rank 0)...")
-        # Remove any existing empty .bin files to force re-tokenization
-        for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
-            bin_f = Path(f).with_suffix('.bin')
-            if bin_f.exists() and bin_f.stat().st_size == 0:
-                print(f"  Removing empty .bin file: {bin_f}")
-                bin_f.unlink()
+    # Check if new mixed dataset format is used
+    if 'datasets' in data_config:
+        # New mixed dataset format
+        datasets_config = data_config['datasets']
         
-        train_ds = AethyxDataset(
+        # Check if all .bin files exist
+        all_exist = True
+        for ds_config in datasets_config:
+            train_bin = Path(ds_config['train'])
+            val_bin = Path(ds_config.get('val', ds_config['train']))
+            if not train_bin.exists() or (val_bin.exists() and val_bin.stat().st_size == 0):
+                all_exist = False
+                break
+            if not val_bin.exists():
+                # val file is optional, but if it exists it should be valid
+                pass
+        
+        if not all_exist:
+            if is_main_process:
+                print("Some .bin files missing. Will need to prepare datasets.")
+            # Try to download/prepare each dataset
+            for ds_config in datasets_config:
+                name = ds_config.get('name', 'unknown')
+                if name == 'tinystories':
+                    if is_main_process:
+                        print("Preparing TinyStories...")
+                    if not download_tinystories(Path("data")):
+                        raise RuntimeError("Failed to download TinyStories")
+                elif name == 'fineweb_edu':
+                    if is_main_process:
+                        print("FineWeb-Edu should be prepared with scripts/prepare_fineweb.py")
+                    # Note: FineWeb-Edu preparation is done separately via scripts/prepare_fineweb.py
+                    train_bin = Path(ds_config['train'])
+                    if not train_bin.exists():
+                        raise FileNotFoundError(
+                            f"FineWeb-Edu training data not found at '{train_bin}'. "
+                            "Run: python scripts/prepare_fineweb.py --target-gb 10"
+                        )
+        
+        if is_ddp:
+            dist.barrier()
+        
+        # Tokenize on rank 0 ONLY, then all ranks load
+        if is_main_process:
+            print("Checking/Tokenizing datasets (rank 0)...")
+            for ds_config in datasets_config:
+                for f_key in ['train', 'val']:
+                    if f_key in ds_config:
+                        f = ds_config[f_key]
+                        bin_f = Path(f)
+                        if bin_f.exists() and bin_f.stat().st_size == 0:
+                            print(f"  Removing empty .bin file: {bin_f}")
+                            bin_f.unlink()
+        
+        if is_ddp:
+            dist.barrier()
+        
+        # Create mixed dataset
+        if is_main_process:
+            print("Loading mixed datasets...")
+        
+        # Build datasets config for MixedAethyxDataset
+        mixed_datasets_config = []
+        for ds_config in datasets_config:
+            mixed_datasets_config.append({
+                'train': ds_config['train'],
+                'val': ds_config.get('val', ds_config['train']),
+                'weight': ds_config.get('weight', 1.0),
+            })
+        
+        train_dataset = MixedAethyxDataset(
+            mixed_datasets_config,
+            context_length=data_config['context_length'],
+        )
+        
+        # For validation, we can use a small mixed dataset or just the first dataset's val
+        # For simplicity, use the first dataset's val file
+        val_dataset = AethyxDataset(
+            text_path=datasets_config[0].get('val', datasets_config[0]['train']),
+            context_length=data_config['context_length'],
+        )
+        
+        if is_main_process:
+            print(f"Train samples (mixed): {len(train_dataset)}")
+            print(f"Val samples: {len(val_dataset)}")
+        
+    else:
+        # Legacy single dataset format
+        train_file = Path(data_config['train_file'])
+        val_file = Path(data_config.get('val_file', 'data/val.txt'))
+
+        if train_file.exists() and val_file.exists():
+            if is_main_process:
+                print(f"[OK] Local dataset found: {train_file} ({train_file.stat().st_size // 1_000_000} MB), "
+                      f"{val_file} ({val_file.stat().st_size // 1_000_000} MB) — skipping HF Hub download.")
+        else:
+            if is_main_process:
+                print("Local dataset not found. Attempting to download from Hugging Face Hub...")
+            if not download_tinystories(Path("data")):
+                if not train_file.exists():
+                    raise FileNotFoundError(
+                        f"Training data not found at '{train_file}'. "
+                        "Either run the dataset-preparation cell first, or provide a data/train.txt file."
+                    )
+        
+        # Synchronize all processes after dataset preparation
+        if is_ddp:
+            dist.barrier()
+        
+        # Tokenize on rank 0 ONLY, then all ranks load
+        if is_main_process:
+            print("Tokenizing datasets (rank 0)...")
+            # Remove any existing empty .bin files to force re-tokenization
+            for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+                bin_f = Path(f).with_suffix('.bin')
+                if bin_f.exists() and bin_f.stat().st_size == 0:
+                    print(f"  Removing empty .bin file: {bin_f}")
+                    bin_f.unlink()
+            
+            train_ds = AethyxDataset(
+                text_path=data_config['train_file'],
+                context_length=data_config['context_length'],
+            )
+            print(f"Train tokens: {len(train_ds._data):,}")
+            val_ds = AethyxDataset(
+                text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
+                context_length=data_config['context_length'],
+            )
+            print(f"Val tokens: {len(val_ds._data):,}")
+            # Verify .bin files exist and non-empty
+            import os
+            for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+                bin_f = str(Path(f).with_suffix('.bin'))
+                size = os.path.getsize(bin_f)
+                print(f"  {bin_f}: {size:,} bytes")
+                if size == 0:
+                    raise RuntimeError(f"Empty .bin file after tokenization: {bin_f}")
+        
+        if is_ddp:
+            dist.barrier()
+        
+        # Now create datasets on all ranks (will use existing .bin files)
+        if is_main_process:
+            print("Loading datasets...")
+        train_dataset = AethyxDataset(
             text_path=data_config['train_file'],
             context_length=data_config['context_length'],
         )
-        print(f"Train tokens: {len(train_ds._data):,}")
-        val_ds = AethyxDataset(
+        
+        val_dataset = AethyxDataset(
             text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
             context_length=data_config['context_length'],
         )
-        print(f"Val tokens: {len(val_ds._data):,}")
-        # Verify .bin files exist and non-empty
-        import os
-        for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
-            bin_f = str(Path(f).with_suffix('.bin'))
-            size = os.path.getsize(bin_f)
-            print(f"  {bin_f}: {size:,} bytes")
-            if size == 0:
-                raise RuntimeError(f"Empty .bin file after tokenization: {bin_f}")
-    
-    if is_ddp:
-        dist.barrier()
-    
-    # Now create datasets on all ranks (will use existing .bin files)
-    if is_main_process:
-        print("Loading datasets...")
-    train_dataset = AethyxDataset(
-        text_path=data_config['train_file'],
-        context_length=data_config['context_length'],
-    )
-    
-    val_dataset = AethyxDataset(
-        text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
-        context_length=data_config['context_length'],
-    )
-    
-    if is_main_process:
-        print(f"Train samples: {len(train_dataset)}")
-        print(f"Val samples: {len(val_dataset)}")
+        
+        if is_main_process:
+            print(f"Train samples: {len(train_dataset)}")
+            print(f"Val samples: {len(val_dataset)}")
     
     # Create distributed samplers for DDP
     if is_ddp:

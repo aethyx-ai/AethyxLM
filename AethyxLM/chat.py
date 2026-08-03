@@ -76,9 +76,10 @@ def generate(model, tok, prompt, max_new=200, temp=0.8, top_k=50):
     model.eval()
     context_length = model.context_length if hasattr(model, 'context_length') else 128
     ids = torch.tensor([tok.encode(prompt)], dtype=torch.long, device=next(model.parameters()).device)
+    prompt_len = len(ids[0])  # Track where generation starts
     
     for _ in range(max_new):
-        logits = model(ids[:, -context_length:])  # Crop to context length
+        logits = model(ids[:, -context_length:])
         logits = logits[:, -1, :] / temp
         
         if top_k > 0:
@@ -88,9 +89,83 @@ def generate(model, tok, prompt, max_new=200, temp=0.8, top_k=50):
         probs = torch.softmax(logits, dim=-1)
         next_id = torch.multinomial(probs, 1)
         ids = torch.cat([ids, next_id], dim=1)
+        
+        # Check stop conditions on generated portion ONLY
+        gen_ids = ids[0][prompt_len:]
+        decoded = tok.decode(gen_ids.tolist())
+        normalized = decoded.replace("Ġ", " ").replace("Ċ", "\n")
+        norm_lower = normalized.lower()
+        
+        # Stop if model generates another conversation turn
+        if "user:" in norm_lower:
+            break
+        # Stop if model generates "aethyx" marker again (but not at position 0)
+        if "aethyx" in norm_lower:
+            break
+        # Stop if excessive colon repetition
+        if normalized.count(":") > 8:
+            break
+        # Stop if excessive repetition
+        if len(normalized) > 50 and normalized[-15:].count(normalized[-15:][:4]) > 3:
+            break
+        
+        # Hard limit
+        if len(normalized) > 500:
+            break
     
-    return tok.decode(ids[0].tolist())
-
+    full_text = tok.decode(ids[0].tolist())
+    # Fix ByteLevel BPE artifacts: Ġ (U+0120) = space, Ċ (U+010A) = newline
+    full_text = full_text.replace("\u0120", " ").replace("\u010a", "\n")
+    # Remove mojibake artifacts
+    mojibake_chars = ["âĤ¬", "Åĵ", "âĦ¢", "â", "Ă", "ĵ", "Ĥ", "¬", "Å", "Ĥ", "¢"]
+    for ch in mojibake_chars:
+        full_text = full_text.replace(ch, "")
+    # Fix ByteLevel BPE subword spacing: "us er" -> "user", "he ll o" -> "hello", "a et h y x" -> "aethyx"
+    import re
+    def fix_bytelevel_spacing(text):
+        # Fix common subword patterns from ByteLevel BPE
+        replacements = {
+            'us er': 'user',
+            'he ll o': 'hello',
+            'a et h y x': 'aethyx',
+            'a et h y x:': 'aethyx:',
+            'u s e r': 'user',
+            'h e l l o': 'hello',
+            'o n c e': 'once',
+            'u p o n': 'upon',
+            't h e': 'the',
+            'a n d': 'and',
+            't o': 'to',
+            'i n': 'in',
+            'i t': 'it',
+            'i s': 'is',
+            'w a s': 'was',
+            'w e r e': 'were',
+            'b u t': 'but',
+            'o r': 'or',
+            'f o r': 'for',
+            'w i t h': 'with',
+            'a s': 'as',
+            'h a s': 'has',
+            'h a d': 'had',
+            'd o': 'do',
+            'w i l l': 'will',
+            'c o u l d': 'could',
+            'w o u l d': 'would',
+            's h o u l d': 'should',
+            't h i s': 'this',
+            't h a t': 'that',
+        }
+        for wrong, correct in replacements.items():
+            text = text.replace(wrong, correct)
+        return text
+    
+    full_text = fix_bytelevel_spacing(full_text)
+    # General fix: remove spaces between single letters
+    full_text = re.sub(r'(?<=[a-zA-Z]) (?=[a-zA-Z])', '', full_text)
+    full_text = re.sub(r' {2,}', ' ', full_text)
+    full_text = re.sub(r'\n{3,}', '\n\n', full_text)
+    return full_text.strip()
 
 def main():
     print("=" * 60)
@@ -187,8 +262,18 @@ def main():
         
         try:
             full = generate(model, tok, full_prompt, max_new, temperature, top_k)
-            parts = full.split("Aethyx:")
-            response = parts[-1].strip() if len(parts) > 1 else full.strip()
+            # Extract only the response after the last "Aethyx:" 
+            if "Aethyx:" in full:
+                response = full.split("Aethyx:")[-1]
+            elif "a et h y x :" in full:
+                response = full.split("a et h y x :")[-1]
+            else:
+                response = full
+            # Remove any "User:" prefix that might have been generated
+            for prefix in ["User:", "U s e r :"]:
+                if prefix in response:
+                    response = response.split(prefix)[0]
+            response = response.strip()
             safe_print(f"\nAethyx: {response}")
             history = f"{full_prompt} {response}"[-2000:]  # Keep last 2000 chars
         except Exception as e:

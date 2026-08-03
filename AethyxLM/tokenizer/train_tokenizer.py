@@ -19,6 +19,7 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.trainers import BpeTrainer
 from tokenizers.normalizers import Sequence, NFD, Lowercase, StripAccents
+from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 
 from tokenizer.config import (
     CORPUS_FILE,
@@ -52,6 +53,7 @@ def train_tokenizer():
     ])
 
     tokenizer.pre_tokenizer = ByteLevel()
+    tokenizer.decoder = ByteLevelDecoder()
 
     trainer = BpeTrainer(
         vocab_size=VOCAB_SIZE,
@@ -81,6 +83,9 @@ def train_tokenizer():
             ]
         },
         "pre_tokenizer": {
+            "type": "ByteLevel"
+        },
+        "decoder": {
             "type": "ByteLevel"
         },
         "trainer": {

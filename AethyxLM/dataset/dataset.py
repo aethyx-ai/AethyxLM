@@ -174,3 +174,84 @@ class AethyxDataset(Dataset):
         x = torch.from_numpy(chunk[:-1])
         y = torch.from_numpy(chunk[1:])
         return x, y
+
+
+class MixedAethyxDataset(Dataset):
+    """
+    Memory-efficient mixed dataset that samples from multiple AethyxDatasets
+    according to configurable weights.
+    
+    Each sub-dataset is an AethyxDataset backed by a memory-mapped .bin file.
+    Sampling is done according to configurable weights.
+    """
+
+    def __init__(self, datasets_config: list, context_length=128, seed: int = 42):
+        """
+        Args:
+            datasets_config: List of dicts with keys:
+                - 'train': path to train .bin file
+                - 'val': path to val .bin file (optional)
+                - 'weight': sampling weight (will be normalized)
+            context_length: sequence length
+            seed: random seed
+        """
+        self.context_length = context_length
+        self.seed = seed
+        random.seed(seed)
+        np.random.seed(seed)
+
+        # Load datasets config
+        self.datasets_config = datasets_config
+        self.sub_datasets = []
+        self.weights = []
+
+        # Load each sub-dataset
+        for config in datasets_config:
+            weight = config.get('weight', 1.0)
+            train_path = config['train']
+            val_path = config.get('val')
+
+            train_dataset = AethyxDataset(train_path, context_length=context_length)
+            self.sub_datasets.append(train_dataset)
+            self.weights.append(weight)
+
+            if val_path:
+                val_dataset = AethyxDataset(val_path, context_length=context_length)
+                self.sub_datasets.append(val_dataset)
+                self.weights.append(weight)
+
+        # Normalize weights
+        total_weight = sum(self.weights)
+        self.weights = [w / total_weight for w in self.weights]
+
+        # Calculate cumulative weights for sampling
+        self.cumulative_weights = np.cumsum(self.weights)
+
+        # Total length (weighted sum of lengths)
+        self.total_length = sum(
+            len(ds) * w for ds, w in zip(self.sub_datasets, self.weights)
+        )
+
+    def __len__(self):
+        return int(self.total_length)
+
+    def __getitem__(self, idx):
+        # Sample which dataset to use based on weights
+        r = np.random.random()
+        dataset_idx = np.searchsorted(self.cumulative_weights, r)
+        dataset = self.sub_datasets[dataset_idx]
+
+        # Get item from selected dataset
+        dataset_len = len(dataset)
+        if dataset_len == 0:
+            # Fallback to first dataset
+            dataset = self.sub_datasets[0]
+            dataset_len = len(dataset)
+
+        # Map idx to dataset index
+        local_idx = idx % dataset_len
+        chunk = np.array(dataset._data[local_idx: local_idx + self.context_length + 1],
+                         dtype=np.int64)
+        x = torch.from_numpy(chunk[:-1])
+        y = torch.from_numpy(chunk[1:])
+        return x, y

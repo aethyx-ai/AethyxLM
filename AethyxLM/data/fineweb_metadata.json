@@ -1,0 +1,21 @@
+{
+  "dataset": "FineWeb-Edu (sample-10BT)",
+  "date": "2026-08-03T23:39:21.535528",
+  "documents_processed": 100,
+  "documents_accepted": 100,
+  "documents_duplicates": 0,
+  "documents_rejected": 0,
+  "total_tokens": 150146,
+  "average_document_length": 1501.46,
+  "train_tokens": 804,
+  "val_tokens": 2118,
+  "train_size_bytes": 1608,
+  "val_size_bytes": 4236,
+  "total_size_bytes": 5844,
+  "train_size_gb": 1.4975666999816895e-06,
+  "val_size_gb": 3.945082426071167e-06,
+  "total_size_gb": 5.4426491260528564e-06,
+  "elapsed_seconds": 74.55925679206848,
+  "tokenizer": "tokenizer/tokenizer.json",
+  "val_split": 0.1
+}

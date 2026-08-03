@@ -1,0 +1,12 @@
+{
+  "tinystories": {
+    "train": "data/train.bin",
+    "val": "data/val.bin",
+    "weight": 0.2
+  },
+  "fineweb_edu": {
+    "train": "data/fineweb_train.bin",
+    "val": "data/fineweb_val.bin",
+    "weight": 0.8
+  }
+}

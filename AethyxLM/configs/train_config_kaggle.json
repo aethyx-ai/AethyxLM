@@ -1,6 +1,6 @@
 {
   "seed": 42,
-"model": {
+  "model": {
     "vocab_size": 32000,
     "context_length": 64,
     "embed_dim": 128,
@@ -32,9 +32,21 @@
     "log_interval": 50,
     "generate_interval": 999999
   },
-"data": {
-    "train_file": "data/train.txt",
-    "val_file": "data/val.txt",
+  "data": {
+    "datasets": [
+      {
+        "name": "tinystories",
+        "train": "data/train.bin",
+        "val": "data/val.bin",
+        "weight": 0.2
+      },
+      {
+        "name": "fineweb_edu",
+        "train": "data/fineweb_train.bin",
+        "val": "data/fineweb_val.bin",
+        "weight": 0.8
+      }
+    ],
     "context_length": 64,
     "batch_size": 8,
     "num_workers": 0,
