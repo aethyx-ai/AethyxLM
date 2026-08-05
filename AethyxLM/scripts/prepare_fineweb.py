@@ -427,7 +427,7 @@ class FineWebPreparer:
         process = psutil.Process()
         return process.memory_info().rss / (1024 * 1024)
     
-    def run(self):
+    def _run_loop(self):
         """Main processing loop."""
         print("=" * 70)
         print("FineWeb-Edu Streaming Preparation")
@@ -610,7 +610,7 @@ class FineWebPreparer:
     def run(self):
         """Main entry point."""
         try:
-            self.run()
+            self._run_loop()
         except KeyboardInterrupt:
             print("\n[INTERRUPT] Interrupted by user")
             self._shutdown = True
