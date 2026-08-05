@@ -1,0 +1,65 @@
+{
+  "seed": 42,
+  "model": {
+    "vocab_size": 1908,
+    "context_length": 128,
+    "embed_dim": 256,
+    "num_heads": 8,
+    "num_layers": 8,
+    "ffn_dim": 1024,
+    "dropout": 0.1,
+    "use_bias": true,
+    "layer_norm_eps": 1e-5,
+    "normalization": "rmsnorm",
+    "position_encoding": "rope",
+    "ffn_type": "swiglu"
+  },
+  "training": {
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "grad_clip": 1.0,
+    "warmup_steps": 1000,
+    "max_steps": 50000,
+    "min_lr_ratio": 0.1,
+    "grad_accum_steps": 4,
+    "use_amp": true,
+    "batch_size": 8,
+    "num_workers": 0,
+    "eval_interval": 999999,
+    "save_interval": 500,
+    "log_interval": 50,
+    "generate_interval": 999999
+  },
+  "data": {
+    "datasets": [
+      {
+        "name": "tinystories",
+        "train": "data/train.bin",
+        "val": "data/val.bin",
+        "weight": 0.2
+      },
+      {
+        "name": "fineweb_edu",
+        "train": "data/fineweb_train.bin",
+        "val": "data/fineweb_val.bin",
+        "weight": 0.8
+      }
+    ],
+    "context_length": 128,
+    "batch_size": 8,
+    "num_workers": 0,
+    "shuffle": false
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints",
+    "log_interval": 10,
+    "eval_interval": 500,
+    "save_interval": 1000
+  },
+  "tokenizer": {
+    "tokenizer_file": "tokenizer/tokenizer.json",
+    "vocab_size": 32000
+  }
+}

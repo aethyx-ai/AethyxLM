@@ -6,7 +6,7 @@ Architecture (Pre-LayerNorm):
 Input
    │
    ▼
-LayerNorm
+Normalization
    │
    ▼
 Multi-Head Self Attention
@@ -15,7 +15,7 @@ Multi-Head Self Attention
 Residual Add
    │
    ▼
-LayerNorm
+Normalization
    │
    ▼
 Feed Forward Network
@@ -30,9 +30,21 @@ Output
 import torch
 import torch.nn as nn
 
+from model.config import (
+    EMBED_DIM,
+    NUM_HEADS,
+    FFN_DIM,
+    DROPOUT,
+    CONTEXT_LENGTH,
+    USE_BIAS,
+    LAYER_NORM_EPS,
+    NORMALIZATION,
+    FFN_TYPE,
+)
+
 from model.attention import MultiHeadSelfAttention
-from model.feed_forward import FeedForward
-from model.layer_norm import LayerNorm
+from model.modules.feedforward import FeedForward
+from model.modules.rmsnorm import build_normalization
 
 
 class TransformerBlock(nn.Module):
@@ -55,11 +67,36 @@ class TransformerBlock(nn.Module):
         context_length: int = None,
         use_bias: bool = None,
         layer_norm_eps: float = None,
+        normalization: str = None,
+        ffn_type: str = None,
     ):
         super().__init__()
 
-        # First LayerNorm
-        self.norm1 = LayerNorm(embed_dim=embed_dim, eps=layer_norm_eps)
+        if embed_dim is None:
+            embed_dim = EMBED_DIM
+        if num_heads is None:
+            num_heads = NUM_HEADS
+        if ffn_dim is None:
+            ffn_dim = FFN_DIM
+        if dropout is None:
+            dropout = DROPOUT
+        if context_length is None:
+            context_length = CONTEXT_LENGTH
+        if use_bias is None:
+            use_bias = USE_BIAS
+        if layer_norm_eps is None:
+            layer_norm_eps = LAYER_NORM_EPS
+        if normalization is None:
+            normalization = NORMALIZATION
+        if ffn_type is None:
+            ffn_type = FFN_TYPE
+
+        # First Normalization
+        self.norm1 = build_normalization(
+            embed_dim=embed_dim,
+            normalization=normalization,
+            eps=layer_norm_eps,
+        )
 
         # Self-Attention
         self.attention = MultiHeadSelfAttention(
@@ -70,8 +107,12 @@ class TransformerBlock(nn.Module):
             use_bias=use_bias,
         )
 
-        # Second LayerNorm
-        self.norm2 = LayerNorm(embed_dim=embed_dim, eps=layer_norm_eps)
+        # Second Normalization
+        self.norm2 = build_normalization(
+            embed_dim=embed_dim,
+            normalization=normalization,
+            eps=layer_norm_eps,
+        )
 
         # Feed Forward Network
         self.feed_forward = FeedForward(
@@ -79,6 +120,7 @@ class TransformerBlock(nn.Module):
             hidden_dim=ffn_dim,
             dropout=dropout,
             use_bias=use_bias,
+            ffn_type=ffn_type,
         )
 
     def forward(

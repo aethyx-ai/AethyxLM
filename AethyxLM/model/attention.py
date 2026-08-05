@@ -15,6 +15,9 @@ Q, K, V Projections
 Split into Multiple Heads
     │
     ▼
+RoPE (optional)
+    │
+    ▼
 Scaled Dot Product Attention
     │
     ▼
@@ -46,9 +49,13 @@ from model.config import (
     CONTEXT_LENGTH,
     DROPOUT,
     USE_BIAS,
+    POSITION_ENCODING,
+    ROPE_BASE,
+    ROPE_MAX_SEQ_LEN,
 )
 
 from model.layers import Linear
+from model.modules.rope import RotaryEmbedding
 
 
 class MultiHeadSelfAttention(nn.Module):
@@ -69,6 +76,9 @@ class MultiHeadSelfAttention(nn.Module):
         dropout: float = None,
         context_length: int = None,
         use_bias: bool = None,
+        position_encoding: str = None,
+        rope_base: float = None,
+        rope_max_seq_len: int = None,
     ):
         super().__init__()
 
@@ -82,6 +92,12 @@ class MultiHeadSelfAttention(nn.Module):
             context_length = CONTEXT_LENGTH
         if use_bias is None:
             use_bias = USE_BIAS
+        if position_encoding is None:
+            position_encoding = POSITION_ENCODING
+        if rope_base is None:
+            rope_base = ROPE_BASE
+        if rope_max_seq_len is None:
+            rope_max_seq_len = ROPE_MAX_SEQ_LEN
 
         if embed_dim % num_heads != 0:
             raise ValueError(
@@ -91,6 +107,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
+        self.position_encoding = position_encoding
 
         # --------------------------------------------------
         # Query, Key and Value projections
@@ -125,6 +142,35 @@ class MultiHeadSelfAttention(nn.Module):
         )
 
         self.dropout = nn.Dropout(dropout)
+
+        # --------------------------------------------------
+        # Causal Mask
+        # --------------------------------------------------
+
+        mask = torch.tril(
+            torch.ones(
+                context_length,
+                context_length,
+            )
+        )
+
+        self.register_buffer(
+            "causal_mask",
+            mask,
+        )
+
+        # --------------------------------------------------
+        # RoPE (if enabled)
+        # --------------------------------------------------
+
+        if position_encoding == "rope":
+            self.rope = RotaryEmbedding(
+                head_dim=self.head_dim,
+                max_seq_len=context_length,  # Use config context length for initial cache
+                base=rope_base,
+            )
+        else:
+            self.rope = None
 
         # --------------------------------------------------
         # Causal Mask
@@ -208,6 +254,13 @@ class MultiHeadSelfAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # --------------------------------------------
+        # Apply RoPE to Q and K (if enabled)
+        # --------------------------------------------
+
+        if self.rope is not None:
+            q, k = self.rope(q, k, seq_len=sequence_length)
+
+        # --------------------------------------------
         # Scaled Dot Product Attention
         # --------------------------------------------
 
@@ -261,7 +314,7 @@ class MultiHeadSelfAttention(nn.Module):
         #
         # (B, H, T, Hd)
         #
-        # ->
+        # becomes
         #
         # (B, T, H, Hd)
         # --------------------------------------------
