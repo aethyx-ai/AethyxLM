@@ -1,676 +1,740 @@
 #!/usr/bin/env python3
-"""
-AethyxLM - FineWeb-Edu Streaming Dataset Preparation
-
-Streams FineWeb-Edu from Hugging Face, cleans, deduplicates, tokenizes,
-and generates binary dataset files for training with true streaming.
-
-Requirements:
-- True streaming from Hugging Face (no full dataset download)
-- Incremental tokenization and writing
-- Buffered writing with periodic flush
-- Proper validation split
-- Correct stop condition (by bytes/tokens)
-- Live progress reporting
-- Crash safety with buffer flush on interrupt
-- Resume support
-- Disk verification after each flush
-- Memory verification
-- Modular, clean code structure
-"""
+"""Stream FineWeb-Edu into verified uint16 training and validation files."""
 
 import argparse
+import ctypes
+import gc
 import hashlib
 import json
 import os
+import re
 import signal
 import sys
 import time
-import mmap
-from datetime import datetime
+import unicodedata
+from collections import deque
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple, List, Iterator
-from dataclasses import dataclass, asdict
-from contextlib import contextmanager
+from typing import Deque, Dict, Iterator, List, Optional, Set, Tuple
 
-# Ensure project root is on sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
+import numpy as np
 from datasets import load_dataset
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from tokenizer.tokenizer import AethyxTokenizer
+
+
+BYTES_PER_TOKEN = np.dtype("<u2").itemsize
+DATASET_NAME = "HuggingFaceFW/fineweb-edu"
+DATASET_CONFIG = "sample-10BT"
+STATE_VERSION = 2
+STREAM_BATCH_SIZE = 100
+SPACE_RE = re.compile(r"[ \t]+")
+NEWLINE_RE = re.compile(r"\n{3,}")
 
 
 @dataclass
 class PrepStats:
-    """Statistics for preparation run."""
-    processed: int = 0
-    accepted: int = 0
-    duplicates: int = 0
-    rejected: int = 0
-    tokens: int = 0
+    processed_documents: int = 0
+    accepted_documents: int = 0
+    rejected_documents: int = 0
+    duplicate_documents: int = 0
     train_tokens: int = 0
     val_tokens: int = 0
-    start_time: float = 0.0
-    
-    def to_dict(self) -> dict:
-        return asdict(self)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.train_tokens + self.val_tokens
 
 
-@dataclass
-class WriteStats:
-    """Track write statistics for verification."""
-    bytes_written: int = 0
-    tokens_written: int = 0
-    flush_count: int = 0
+class BinaryTokenWriter:
+    """A bounded, append-only uint16 writer with exact size verification."""
 
+    def __init__(self, path: Path, buffer_tokens: int, append: bool) -> None:
+        if buffer_tokens <= 0:
+            raise ValueError("buffer_tokens must be positive")
 
-class TokenBuffer:
-    """Buffered token writer with periodic flush and verification."""
-    
-    def __init__(self, file_path: Path, buffer_size: int = 1_000_000):
-        self.file_path = file_path
-        self.buffer_size = buffer_size
-        self.buffer: List[int] = []
-        self.stats = WriteStats()
-        self._file = None
-        self._mmap = None
-        
-    def __enter__(self):
-        self._file = open(self.file_path, 'ab')
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.flush()
-        if self._file:
+        self.path = path
+        self.buffer_tokens = buffer_tokens
+        self._buffer: List[int] = []
+        self._file = path.open("ab" if append else "wb", buffering=1024 * 1024)
+        self.expected_size = path.stat().st_size
+        if self.expected_size % BYTES_PER_TOKEN:
             self._file.close()
-    
-    def add(self, token_ids: List[int]) -> int:
-        """Add token IDs to buffer, flush if buffer full."""
-        if not token_ids:
+            raise ValueError(f"{path} has a partial uint16 token ({self.expected_size} bytes)")
+
+    @property
+    def buffered_tokens(self) -> int:
+        return len(self._buffer)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.expected_size // BYTES_PER_TOKEN + len(self._buffer)
+
+    @property
+    def should_flush(self) -> bool:
+        return len(self._buffer) >= self.buffer_tokens
+
+    def write_tokens(self, token_ids: List[int], limit: Optional[int] = None) -> int:
+        count = len(token_ids) if limit is None else min(len(token_ids), limit)
+        if count <= 0:
             return 0
-        
-        self.buffer.extend(token_ids)
-        written = 0
-        
-        while len(self.buffer) >= self.buffer_size:
-            written += self._flush_chunk()
-        
-        return written
-    
-    def _flush_chunk(self) -> int:
-        """Flush one chunk of buffer_size tokens."""
-        if not self.buffer:
-            return 0
-        
-        import numpy as np
-        chunk = self.buffer[:self.buffer_size]
-        arr = np.array(chunk, dtype=np.uint16)
-        
-        # Write and verify
-        self._file.write(arr.tobytes())
-        self._file.flush()
-        os.fsync(self._file.fileno())
-        
-        # Verify write
-        expected_bytes = len(chunk) * 2  # uint16 = 2 bytes
-        actual_size = self.file_path.stat().st_size
-        # Note: Can't easily verify exact bytes without tracking position
-        # We'll track total bytes written separately
-        
-        self.buffer = self.buffer[self.buffer_size:]
-        self.stats.bytes_written += len(chunk) * 2
-        self.stats.tokens_written += len(chunk)
-        self.stats.flush_count += 1
-        return len(chunk)
-    
+        if count == len(token_ids):
+            self._buffer.extend(token_ids)
+        else:
+            self._buffer.extend(token_ids[:count])
+        return count
+
     def flush(self) -> int:
-        """Flush remaining buffer."""
-        total = 0
-        while self.buffer:
-            total += self._flush_chunk()
-        return total
-    
-    def get_stats(self) -> WriteStats:
-        return self.stats
+        if not self._buffer:
+            self._verify_size()
+            return 0
+
+        tokens = np.asarray(self._buffer, dtype="<u2")
+        previous_size = self.expected_size
+        new_size = previous_size + int(tokens.nbytes)
+        try:
+            tokens.tofile(self._file)
+            self._file.flush()
+            os.fsync(self._file.fileno())
+            self.expected_size = new_size
+            self._verify_size()
+        except Exception:
+            actual_size = os.path.getsize(self.path)
+            if actual_size == new_size:
+                self.expected_size = new_size
+                self._buffer.clear()
+            elif actual_size != previous_size:
+                self._file.seek(previous_size)
+                self._file.truncate()
+                self._file.flush()
+                os.fsync(self._file.fileno())
+            raise
+
+        count = len(self._buffer)
+        self._buffer.clear()
+        return count
+
+    def _verify_size(self) -> None:
+        actual_size = os.path.getsize(self.path)
+        if actual_size != self.expected_size:
+            raise IOError(
+                f"Write verification failed for {self.path}: "
+                f"expected {self.expected_size:,} bytes, found {actual_size:,}"
+            )
+
+    def close(self) -> None:
+        self._file.close()
 
 
 class FineWebPreparer:
-    """Prepares FineWeb-Edu dataset for AethyxLM training with true streaming."""
-    
-    # Buffer size in tokens (each token = 2 bytes as uint16)
-    DEFAULT_BUFFER_SIZE = 1_000_000  # ~2MB per flush
-    
+    """Coordinate streaming, tokenization, splitting, and durable writes."""
+
     def __init__(
         self,
-        target_gb: float = None,
-        target_documents: int = None,
-        val_split: float = 0.01,
-        output_dir: str = "data",
-        tokenizer_path: str = "tokenizer/tokenizer.json",
-        resume: bool = False,
-    ):
+        target_gb: Optional[float],
+        target_documents: Optional[int],
+        val_split: float,
+        output_dir: str,
+        tokenizer_path: str,
+        resume: bool,
+        resume_from: Optional[int],
+        buffer_tokens: int,
+        progress_seconds: float,
+        dedup_window: int,
+    ) -> None:
+        if target_gb is None and target_documents is None:
+            raise ValueError("Either target_gb or target_documents is required")
+        if target_gb is not None and target_gb <= 0:
+            raise ValueError("target_gb must be positive")
+        if target_documents is not None and target_documents <= 0:
+            raise ValueError("target_documents must be positive")
+        if not 0.0 <= val_split <= 1.0:
+            raise ValueError("val_split must be between 0 and 1")
+        if resume_from is not None and resume_from < 0:
+            raise ValueError("resume_from must be non-negative")
+        if dedup_window < 0:
+            raise ValueError("dedup_window must be non-negative")
+
         self.target_gb = target_gb
         self.target_documents = target_documents
+        self.requested_target_bytes = (
+            int(target_gb * 1024**3) if target_gb is not None else None
+        )
+        self.target_tokens = (
+            self.requested_target_bytes // BYTES_PER_TOKEN
+            if self.requested_target_bytes is not None
+            else None
+        )
+        if self.target_tokens == 0:
+            raise ValueError("target_gb is too small to contain one uint16 token")
+        self.target_bytes = (
+            self.target_tokens * BYTES_PER_TOKEN
+            if self.target_tokens is not None
+            else None
+        )
         self.val_split = val_split
         self.output_dir = Path(output_dir)
-        self.tokenizer_path = tokenizer_path
-        self.resume = resume
-        
-        # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize tokenizer
-        self.tokenizer = AethyxTokenizer(tokenizer_path)
-        
-        # Statistics
-        self.stats = {
-            "processed": 0,
-            "accepted": 0,
-            "duplicates": 0,
-            "rejected": 0,
-            "tokens": 0,
-            "train_tokens": 0,
-            "val_tokens": 0,
-            "start_time": time.time(),
-        }
-        
-        # Deduplication - use memory-efficient approach
-        self.seen_hashes = set()
-        self.max_hashes = 50_000_000  # Limit to prevent OOM
-        
-        # Output files
-        self.train_bin = self.output_dir / "fineweb_train.bin"
-        self.val_bin = self.output_dir / "fineweb_val.bin"
-        self.metadata_path = self.output_dir / "fineweb_metadata.json"
+        self.tokenizer_path = Path(tokenizer_path)
+        self.tokenizer = AethyxTokenizer(self.tokenizer_path)
+        self.tokenizer_sha256 = sha256_file(self.tokenizer_path)
+        if self.tokenizer.vocab_size > np.iinfo(np.uint16).max + 1:
+            raise ValueError(
+                f"Vocabulary size {self.tokenizer.vocab_size:,} does not fit uint16"
+            )
+
+        self.train_path = self.output_dir / "fineweb_train.bin"
+        self.val_path = self.output_dir / "fineweb_val.bin"
         self.state_path = self.output_dir / "fineweb_state.json"
-        
-        # Target in bytes
-        if target_gb:
-            self.target_bytes = int(target_gb * 1024 * 1024 * 1024)
-        else:
-            self.target_bytes = None
-        
-        if target_documents:
-            self.target_docs = target_documents
-        else:
-            self.target_docs = None
-        
-        self.val_split = val_split
-        self.val_every = max(1, int(1 / val_split))
-        
-        # Signal handling for graceful shutdown
-        self._shutdown = False
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        
-        # Resume state
-        self._resume_offset = 0
-        self._last_doc_hash = None
-        
+        self.metadata_path = self.output_dir / "fineweb_metadata.json"
+        self.resume = resume
+        self.resume_from = resume_from
+        self.buffer_tokens = buffer_tokens
+        self.progress_seconds = progress_seconds
+        self.dedup_window = dedup_window
+
+        self.stats = PrepStats()
+        self.stream_offset = 0
+        self.created_at = datetime.now(timezone.utc).isoformat()
+        self._seen_hashes: Set[bytes] = set()
+        self._hash_order: Deque[bytes] = deque()
+        self._stop_requested = False
+        self._start_time = 0.0
+        self._last_report_time = 0.0
+        self._session_start_tokens = 0
+        self._session_start_bytes = 0
+        self._run_status = "running"
+        self._last_memory_release = 0.0
+
         if resume:
             self._load_resume_state()
-    
-    def _signal_handler(self, signum, frame):
-        """Handle interrupt signals gracefully."""
-        print("\n[INTERRUPT] Received signal, flushing buffers...")
-        self._shutdown = True
-    
-    def _load_resume_state(self):
-        """Load resume state from previous run."""
-        if self.state_path.exists():
-            try:
-                with open(self.state_path, 'r') as f:
-                    state = json.load(f)
-                self.stats.update(state.get('stats', {}))
-                self._resume_offset = state.get('resume_offset', 0)
-                self._last_doc_hash = state.get('last_doc_hash')
-                print(f"[RESUME] Resuming from offset {self._resume_offset}, "
-                      f"accepted={self.stats['accepted']}, tokens={self.stats['tokens']:,}")
-            except Exception as e:
-                print(f"[WARN] Failed to load resume state: {e}")
-    
-    def _save_resume_state(self):
-        """Save resume state for recovery."""
-        state = {
-            'stats': {k: v for k, v in self.stats.items() if k != 'start_time'},
-            'resume_offset': self._resume_offset,
-            'last_doc_hash': self._last_doc_hash,
-            'timestamp': time.time(),
-        }
-        try:
-            with open(self.state_path, 'w') as f:
-                json.dump(state, f)
-        except Exception:
-            pass  # Non-critical
-    
-    def clean_text(self, text: str) -> str:
-        """Clean and normalize text."""
-        if not text:
-            return ""
-        
-        import unicodedata
-        import re
-        
-        # Unicode normalization
+        elif resume_from is not None:
+            self.stream_offset = resume_from
+
+    def stream_documents(self) -> Iterator[Dict[str, object]]:
+        """Yield documents from Hugging Face without materializing the dataset."""
+        dataset = load_dataset(
+            DATASET_NAME,
+            DATASET_CONFIG,
+            split="train",
+            streaming=True,
+            columns=["text"],
+            batch_size=STREAM_BATCH_SIZE,
+        )
+        if self.stream_offset:
+            print(f"Skipping {self.stream_offset:,} streamed documents for resume...")
+            dataset = dataset.skip(self.stream_offset)
+        yield from dataset
+
+    @staticmethod
+    def clean_text(text: str) -> str:
         text = unicodedata.normalize("NFKC", text)
-        
-        # Normalize line endings
         text = text.replace("\r\n", "\n").replace("\r", "\n")
-        
-        # Normalize whitespace
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        
-        # Strip
-        text = text.strip()
-        
-        return text
-    
-    def validate_text(self, text: str) -> bool:
-        """Validate text quality."""
-        if not text:
+        text = SPACE_RE.sub(" ", text)
+        return NEWLINE_RE.sub("\n\n", text).strip()
+
+    @staticmethod
+    def _valid_text(text: str) -> bool:
+        return len(text) >= 100 and len(set(text)) >= 10
+
+    def _is_duplicate(self, digest: bytes) -> bool:
+        if not self.dedup_window:
             return False
-        
-        # Skip if too short
-        if len(text) < 100:
-            return False
-        
-        # Skip if mostly whitespace
-        if text.strip() == "":
-            return False
-        
-        # Check for corrupted unicode
-        try:
-            text.encode("utf-8")
-        except UnicodeEncodeError:
-            return False
-        
-        # Check for reasonable character diversity
-        unique_chars = len(set(text))
-        if unique_chars < 10:
-            return False
-        
-        return True
-    
-    def get_text_hash(self, text: str) -> str:
-        """Generate SHA256 hash for deduplication."""
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-    
-    def is_duplicate(self, text: str) -> bool:
-        """Check if text is a duplicate using hash set with size limit."""
-        text_hash = self.get_text_hash(text)
-        if text_hash in self.seen_hashes:
+        if digest in self._seen_hashes:
             return True
-        
-        # Limit hash set size to prevent OOM
-        if len(self.seen_hashes) >= self.max_hashes:
-            # Clear half the set (simple LRU approximation)
-            # In production, use LRU cache or bloom filter
-            items = list(self.seen_hashes)[:self.max_hashes // 2]
-            self.seen_hashes = set(items)
-        
-        self.seen_hashes.add(text_hash)
+        if len(self._hash_order) >= self.dedup_window:
+            expired = self._hash_order.popleft()
+            self._seen_hashes.remove(expired)
+        self._hash_order.append(digest)
+        self._seen_hashes.add(digest)
         return False
-    
-    def process_document(self, doc: dict) -> List[int]:
-        """Process a single document, return list of token IDs."""
-        text = doc.get("text", "")
-        if not text:
-            return []
-        
-        # Clean
-        text = self.clean_text(text)
-        
-        # Validate
-        if not self.validate_text(text):
-            return []
-        
-        # Check duplicate
-        if self.is_duplicate(text):
-            return []
-        
-        # Tokenize
+
+    def tokenize_document(
+        self, document: Dict[str, object]
+    ) -> Tuple[Optional[List[int]], Optional[bytes], bool]:
+        """Clean and tokenize one document; no token data survives the iteration."""
+        raw_text = document.get("text")
+        if not isinstance(raw_text, str):
+            return None, None, False
+
+        text = self.clean_text(raw_text)
+        if not self._valid_text(text):
+            return None, None, False
+
+        digest = hashlib.blake2b(text.encode("utf-8"), digest_size=8).digest()
+        if self._is_duplicate(digest):
+            return None, digest, True
+
         try:
             token_ids = self.tokenizer.encode(text)
-        except Exception:
-            return []
-        
-        return token_ids
-    
-    @contextmanager
-    def _open_binary_files(self):
-        """Context manager for binary file handles with proper flushing."""
-        train_file = open(self.train_bin, 'ab')
-        val_file = open(self.val_bin, 'ab')
-        try:
-            yield train_file, val_file
-        finally:
-            train_file.flush()
-            val_file.flush()
-            os.fsync(train_file.fileno())
-            os.fsync(val_file.fileno())
-            train_file.close()
-            val_file.close()
-    
-    def _write_tokens_buffered(self, token_ids: List[int], is_val: bool, 
-                                train_buffer: 'TokenBuffer', 
-                                val_buffer: 'TokenBuffer') -> Tuple[int, int]:
-        """Write tokens to appropriate buffer."""
+        except Exception as exc:
+            print(f"\nTokenizer rejected a document: {exc}", file=sys.stderr)
+            return None, digest, False
         if not token_ids:
-            return 0, 0
-        
-        if is_val:
-            written = self._write_to_buffer(token_ids, val_buffer)
-            return 0, len(token_ids)
+            return None, digest, False
+        if min(token_ids) < 0 or max(token_ids) > np.iinfo(np.uint16).max:
+            raise ValueError("Tokenizer emitted an ID outside the uint16 range")
+        return token_ids, digest, False
+
+    def _is_validation(self, digest: bytes) -> bool:
+        if self.val_split <= 0:
+            return False
+        if self.val_split >= 1:
+            return True
+        value = int.from_bytes(digest, "big") / float(1 << 64)
+        return value < self.val_split
+
+    def write_tokens(
+        self,
+        token_ids: List[int],
+        digest: bytes,
+        train_writer: BinaryTokenWriter,
+        val_writer: BinaryTokenWriter,
+    ) -> int:
+        """Route one document directly into its bounded split buffer."""
+        remaining = None
+        if self.target_tokens is not None:
+            remaining = self.target_tokens - (
+                train_writer.total_tokens + val_writer.total_tokens
+            )
+            if remaining <= 0:
+                return 0
+
+        if self._is_validation(digest):
+            written = val_writer.write_tokens(token_ids, remaining)
+            self.stats.val_tokens += written
         else:
-            written = self._write_to_buffer(token_ids, train_buffer)
-            return len(token_ids), 0
-    
-    def _write_to_buffer(self, token_ids: List[int], buffer) -> int:
-        """Write tokens to buffer, returns tokens written."""
-        written = buffer.add(token_ids)
+            written = train_writer.write_tokens(token_ids, remaining)
+            self.stats.train_tokens += written
         return written
-    
-    def print_progress(self):
-        """Print progress statistics."""
-        elapsed = time.time() - self.stats["start_time"]
-        if elapsed <= 0:
+
+    def flush_buffers(
+        self,
+        train_writer: BinaryTokenWriter,
+        val_writer: BinaryTokenWriter,
+        save_state: bool = True,
+    ) -> None:
+        """Synchronously flush both splits and checkpoint their matching offset."""
+        train_writer.flush()
+        val_writer.flush()
+        if save_state:
+            self._save_resume_state(train_writer, val_writer)
+        now = time.monotonic()
+        if now - self._last_memory_release >= 30.0:
+            release_unused_memory()
+            self._last_memory_release = now
+
+    def _target_reached(
+        self, train_writer: BinaryTokenWriter, val_writer: BinaryTokenWriter
+    ) -> bool:
+        if self.target_tokens is not None:
+            if train_writer.total_tokens + val_writer.total_tokens >= self.target_tokens:
+                return True
+        if self.target_documents is not None:
+            return self.stats.accepted_documents >= self.target_documents
+        return False
+
+    def progress_report(
+        self,
+        train_writer: BinaryTokenWriter,
+        val_writer: BinaryTokenWriter,
+        force: bool = False,
+    ) -> None:
+        now = time.monotonic()
+        if not force and now - self._last_report_time < self.progress_seconds:
             return
-            
-        tokens_per_sec = self.stats["tokens"] / elapsed
-        mb_per_sec = (self.stats["tokens"] * 2) / (1024 * 1024 * elapsed)
-        
-        # Calculate current file sizes
-        train_size = self.train_bin.stat().st_size if self.train_bin.exists() else 0
-        val_size = self.val_bin.stat().st_size if self.val_bin.exists() else 0
-        
-        # ETA calculation
-        if self.target_bytes:
-            current_size = self.train_bin.stat().st_size + self.val_bin.stat().st_size
-            if self.stats["tokens"] > 0 and elapsed > 0:
-                tokens_per_sec = self.stats["tokens"] / max(elapsed, 1)
-                remaining_bytes = self.target_bytes - (self.train_bin.stat().st_size + self.val_bin.stat().st_size)
-                if self.stats["tokens"] > 0:
-                    bytes_per_token = (self.train_bin.stat().st_size + self.val_bin.stat().st_size) / max(self.stats["tokens"], 1)
-                    eta_seconds = remaining_bytes / (tokens_per_sec * bytes_per_token) if tokens_per_sec > 0 else 0
-                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                else:
-                    eta_str = "N/A"
-            else:
-                eta_str = "N/A"
-        else:
-            eta_str = "N/A"
-        
+        self._last_report_time = now
+
+        elapsed = max(now - self._start_time, 1e-9)
+        train_size = os.path.getsize(self.train_path)
+        val_size = os.path.getsize(self.val_path)
+        committed_size = train_size + val_size
+        session_tokens = self.stats.total_tokens - self._session_start_tokens
+        session_bytes = committed_size - self._session_start_bytes
+        token_speed = session_tokens / elapsed
+        write_speed = session_bytes / elapsed
+
+        eta = None
+        if self.target_bytes is not None and write_speed > 0:
+            eta = max(0.0, self.target_bytes - committed_size) / write_speed
+
         print(
-            f"\rProcessed: {self.stats['processed']:,} | "
-            f"Accepted: {self.stats['accepted']:,} | "
-            f"Dup: {self.stats['duplicates']:,} | "
-            f"Rej: {self.stats['rejected']:,} | "
-            f"Train Tokens: {self.stats.get('train_tokens', 0):,} | "
-            f"Val Tokens: {self.stats.get('val_tokens', 0):,} | "
-            f"Train Size: {self.train_bin.stat().st_size / (1024**3):.2f} GB | "
-            f"Val Size: {self.val_bin.stat().st_size / (1024**3):.2f} GB | "
-            f"Write: {self.stats['tokens'] / max(time.time() - self.stats['start_time'], 1):,.0f} tok/s | "
-            f"ETA: {eta_str}",
-            end="",
+            "\n"
+            f"Processed Docs : {self.stats.processed_documents:,}\n"
+            f"Accepted Docs  : {self.stats.accepted_documents:,}\n"
+            f"Rejected Docs  : {self.stats.rejected_documents:,}\n"
+            f"Duplicates     : {self.stats.duplicate_documents:,}\n"
+            f"Train Tokens   : {format_count(self.stats.train_tokens)}\n"
+            f"Val Tokens     : {format_count(self.stats.val_tokens)}\n"
+            f"Train Size     : {format_bytes(train_size)}"
+            f" (+{format_count(train_writer.buffered_tokens)} buffered tokens)\n"
+            f"Val Size       : {format_bytes(val_size)}"
+            f" (+{format_count(val_writer.buffered_tokens)} buffered tokens)\n"
+            f"Write Speed    : {format_bytes(write_speed)}/s\n"
+            f"Token Speed    : {format_count(token_speed)} tok/s\n"
+            f"Memory RSS     : {format_memory(memory_usage_mb())}\n"
+            f"Elapsed        : {format_duration(elapsed)}\n"
+            f"ETA            : {format_duration(eta) if eta is not None else 'N/A'}",
             flush=True,
         )
-    
-    def _verify_write(self, file_path: Path, expected_bytes: int) -> bool:
-        """Verify written bytes match expected."""
-        actual = file_path.stat().st_size
-        return actual == expected_bytes
-    
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
-        import psutil
-        process = psutil.Process()
-        return process.memory_info().rss / (1024 * 1024)
-    
-    def _run_loop(self):
-        """Main processing loop."""
-        print("=" * 70)
-        print("FineWeb-Edu Streaming Preparation")
-        print("=" * 70)
-        print(f"Target: {self.target_gb} GB" if self.target_gb else f"Target: {self.target_documents:,} docs")
-        print(f"Val split: {self.val_split * 100:.1f}%")
-        print(f"Output: {self.output_dir}")
-        print(f"Tokenizer: {self.tokenizer_path}")
-        print("=" * 70)
-        
-        # Load dataset in streaming mode
-        print("Loading FineWeb-Edu (streaming)...")
-        dataset = load_dataset("HuggingFaceFW/fineweb-edu", name="sample-10BT", split="train", streaming=True)
-        
-        # Skip to resume offset if resuming
-        if self._resume_offset > 0:
-            print(f"[RESUME] Skipping {self._resume_offset} documents...")
-            dataset = dataset.skip(self._resume_offset)
-        
-# Open output files with buffering
-        with open(self.train_bin, 'ab') as f_train, open(self.val_bin, 'ab') as f_val:
-            train_buffer = TokenBuffer(self.train_bin, buffer_size=1_000_000)
-            val_buffer = TokenBuffer(self.val_bin, buffer_size=1_000_000)
-            
-            try:
-                for doc in dataset:
-                    if self._shutdown:
-                        print("\n[INTERRUPT] Shutting down...")
-                        break
-                    
-                    self.stats["processed"] += 1
-                    
-                    # Process document
-                    token_ids = self.process_document(doc)
-                    
-                    if not token_ids:
-                        self.stats["rejected"] += 1
-                        continue
-                    
-                    # Accepted
-                    self.stats["accepted"] += 1
-                    self.stats["tokens"] += len(token_ids)
-                    
-                    # Write to train or val (deterministic by hash)
-                    is_val = (self.stats["accepted"] % self.val_every == 0)
-                    
-                    if is_val:
-                        written = self._write_to_buffer(self.process_document(doc), val_buffer)
-                        self.stats["val_tokens"] += len(token_ids)
-                    else:
-                        written = self._write_to_buffer(self.process_document(doc), train_buffer)
-                        self.stats["train_tokens"] += len(token_ids)
-                    
-                    # Check target conditions
-                    if self.target_bytes:
-                        current_size = self.train_bin.stat().st_size + self.val_bin.stat().st_size
-                        if current_size >= self.target_bytes:
-                            print(f"\nTarget size reached: {current_size / (1024**3):.2f} GB")
-                            break
-                    
-                    if self.target_docs and self.stats["accepted"] >= self.target_docs:
-                        print(f"\nTarget documents reached: {self.stats['accepted']:,}")
-                        break
-                    
-                    # Progress reporting
-                    if self.stats["processed"] % 1000 == 0:
-                        self.print_progress()
-                        
-                        # Periodic state save for resume
-                        if self.stats["processed"] % 10000 == 0:
-                            self._last_doc_hash = self._get_last_doc_hash()
-                            self._save_resume_state()
-                    
-                    # Periodic memory check
-                    if self.stats["processed"] % 50000 == 0:
-                        mem_mb = self._get_memory_usage()
-                        if self.stats["processed"] % 100000 == 0:
-                            print(f"\n[MEM] RAM: {self._get_memory_usage():.1f} MB")
-                    
-                    if self._shutdown:
-                        break
-                
-            finally:
-                # Final flush
-                self._flush_all_buffers(train_buffer, val_buffer)
-        
-        print()
-        self.finalize()
-    
-    def _flush_all_buffers(self, *buffers):
-        """Flush all buffers and verify."""
-        for buf in buffers:
-            buf.flush()
-    
-    def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
-        try:
-            import psutil
-            return psutil.Process().memory_info().rss / (1024 * 1024)
-        except ImportError:
-            return 0.0
-    
-    def _get_last_doc_hash(self) -> str:
-        """Get hash of last processed document for resume."""
-        return self._last_doc_hash or ""
-    
-    def finalize(self):
-        """Finalize and generate metadata."""
-        elapsed = time.time() - self.stats["start_time"]
-        
-        train_size = self.train_bin.stat().st_size if self.train_bin.exists() else 0
-        val_size = self.val_bin.stat().st_size if self.val_bin.exists() else 0
-        total_size = train_size + val_size
-        
-        # Count tokens in train/val
-        import numpy as np
-        train_tokens = 0
-        val_tokens = 0
-        if self.train_bin.exists():
-            train_tokens = len(np.memmap(self.train_bin, dtype=np.uint16, mode='r'))
-        if self.val_bin.exists():
-            val_tokens = len(np.memmap(self.val_bin, dtype=np.uint16, mode='r'))
-        
-        avg_length = 0
-        if self.stats["accepted"] > 0:
-            avg_length = self.stats["tokens"] / self.stats["accepted"]
-        
+
+    def save_metadata(self, status: str) -> None:
+        duration = max(0.0, time.monotonic() - self._start_time)
+        train_size = self.train_path.stat().st_size
+        val_size = self.val_path.stat().st_size
         metadata = {
-            "dataset": "FineWeb-Edu (sample-10BT)",
-            "date": datetime.now().isoformat(),
-            "documents_processed": self.stats["processed"],
-            "documents_accepted": self.stats["accepted"],
-            "documents_duplicates": self.stats["duplicates"],
-            "documents_rejected": self.stats["rejected"],
-            "total_tokens": self.stats["tokens"],
-            "average_document_length": avg_length,
-            "train_tokens": self.stats.get("train_tokens", 0),
-            "val_tokens": self.stats.get("val_tokens", 0),
-            "train_size_bytes": train_size,
-            "val_size_bytes": val_size,
-            "total_size_bytes": total_size,
-            "train_size_gb": train_size / (1024**3),
-            "val_size_gb": val_size / (1024**3),
-            "total_size_gb": total_size / (1024**3),
-            "elapsed_seconds": time.time() - self.stats["start_time"],
+            "dataset": DATASET_NAME,
+            "dataset_config": DATASET_CONFIG,
             "tokenizer": str(self.tokenizer_path),
-            "val_split": self.val_split,
-            "target_gb": self.target_gb,
-            "target_documents": self.target_documents,
-            "val_split": self.val_split,
+            "vocabulary_size": self.tokenizer.vocab_size,
+            "token_dtype": "uint16",
+            "total_documents": self.stats.processed_documents,
+            "accepted_documents": self.stats.accepted_documents,
+            "rejected_documents": self.stats.rejected_documents,
+            "duplicate_documents": self.stats.duplicate_documents,
+            "train_tokens": self.stats.train_tokens,
+            "validation_tokens": self.stats.val_tokens,
+            "train_size_bytes": train_size,
+            "validation_size_bytes": val_size,
+            "total_size_bytes": train_size + val_size,
+            "target_size_bytes": self.target_bytes,
+            "requested_target_size_bytes": self.requested_target_bytes,
+            "target_size_gb": self.target_gb,
+            "validation_split": self.val_split,
+            "stream_batch_size": STREAM_BATCH_SIZE,
+            "creation_date": self.created_at,
+            "completed_date": datetime.now(timezone.utc).isoformat(),
+            "preparation_duration_seconds": duration,
+            "status": status,
         }
-        
-        with open(self.metadata_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        # Print summary
-        print("\n" + "=" * 70)
-        print("FineWeb-Edu Preparation Complete")
-        print("=" * 70)
-        print(f"Documents processed: {self.stats['processed']:,}")
-        print(f"Documents accepted:  {self.stats['accepted']:,}")
-        print(f"Duplicates removed:  {self.stats['duplicates']:,}")
-        print(f"Rejected:            {self.stats['rejected']:,}")
-        print(f"Total tokens:        {self.stats['tokens']:,}")
-        print(f"Train tokens:        {self.stats.get('train_tokens', 0):,}")
-        print(f"Val tokens:          {self.stats.get('val_tokens', 0):,}")
-        print(f"Train size:          {train_size / (1024**3):.2f} GB")
-        print(f"Val size:            {val_size / (1024**3):.2f} GB")
-        print(f"Total size:          {total_size / (1024**3):.2f} GB")
-        print(f"Time:                {time.time() - self.stats['start_time']:.1f}s")
-        print(f"Metadata saved to:   {self.metadata_path}")
-        
-        # Clean up resume state on successful completion
-        if self.state_path.exists():
-            try:
-                os.remove(self.state_path)
-            except:
-                pass
-    
-    def run(self):
-        """Main entry point."""
+        atomic_write_json(self.metadata_path, metadata)
+
+    def _load_resume_state(self) -> None:
+        if not self.state_path.exists():
+            raise FileNotFoundError(
+                f"Cannot resume without {self.state_path}. Use --resume-from with a "
+                "known source offset, or omit --resume to start new files."
+            )
+        with self.state_path.open("r", encoding="utf-8") as handle:
+            state = json.load(handle)
+        if state.get("version") != STATE_VERSION:
+            raise ValueError(f"Unsupported resume state version in {self.state_path}")
+        if state.get("status") == "complete":
+            raise ValueError(
+                "This output already reached its target. Exact-size completion may "
+                "truncate the final document, so only interrupted/error runs can resume."
+            )
+        expected_config = {
+            "dataset": DATASET_NAME,
+            "dataset_config": DATASET_CONFIG,
+            "tokenizer_sha256": self.tokenizer_sha256,
+            "vocabulary_size": self.tokenizer.vocab_size,
+            "validation_split": self.val_split,
+            "stream_batch_size": STREAM_BATCH_SIZE,
+            "dedup_window": self.dedup_window,
+        }
+        for key, expected in expected_config.items():
+            if state.get(key) != expected:
+                raise ValueError(
+                    f"Resume setting mismatch for {key}: "
+                    f"checkpoint={state.get(key)!r}, requested={expected!r}"
+                )
+
+        self.stats = PrepStats(**state["stats"])
+        self.stream_offset = int(state["stream_offset"])
+        self.created_at = state.get("created_at", self.created_at)
+        expected_train = int(state["train_size_bytes"])
+        expected_val = int(state["val_size_bytes"])
+        actual_train = self.train_path.stat().st_size if self.train_path.exists() else 0
+        actual_val = self.val_path.stat().st_size if self.val_path.exists() else 0
+        if (actual_train, actual_val) != (expected_train, expected_val):
+            raise IOError(
+                "Resume files do not match the last durable checkpoint: "
+                f"train expected/actual={expected_train}/{actual_train}, "
+                f"val expected/actual={expected_val}/{actual_val}"
+            )
+        if self.stats.train_tokens != actual_train // BYTES_PER_TOKEN:
+            raise ValueError("Resume train token count does not match train file size")
+        if self.stats.val_tokens != actual_val // BYTES_PER_TOKEN:
+            raise ValueError("Resume validation token count does not match val file size")
+        if self.target_tokens is not None:
+            existing_tokens = self.stats.train_tokens + self.stats.val_tokens
+            if existing_tokens > self.target_tokens:
+                raise ValueError("Resume target is smaller than the existing output")
+        if (
+            self.target_documents is not None
+            and self.stats.accepted_documents > self.target_documents
+        ):
+            raise ValueError("Resume document target is smaller than the checkpoint")
+
+        hashes = [bytes.fromhex(value) for value in state.get("dedup_hashes", [])]
+        if len(hashes) > self.dedup_window:
+            raise ValueError("Resume deduplication state exceeds the configured window")
+        self._hash_order.extend(hashes)
+        self._seen_hashes.update(hashes)
+
+    def _save_resume_state(
+        self, train_writer: BinaryTokenWriter, val_writer: BinaryTokenWriter
+    ) -> None:
+        if train_writer.buffered_tokens or val_writer.buffered_tokens:
+            raise RuntimeError("Refusing to checkpoint while tokens are still buffered")
+        state = {
+            "version": STATE_VERSION,
+            "dataset": DATASET_NAME,
+            "dataset_config": DATASET_CONFIG,
+            "tokenizer_sha256": self.tokenizer_sha256,
+            "vocabulary_size": self.tokenizer.vocab_size,
+            "validation_split": self.val_split,
+            "stream_batch_size": STREAM_BATCH_SIZE,
+            "dedup_window": self.dedup_window,
+            "dedup_hashes": [value.hex() for value in self._hash_order],
+            "stream_offset": self.stream_offset,
+            "stats": asdict(self.stats),
+            "train_size_bytes": train_writer.expected_size,
+            "val_size_bytes": val_writer.expected_size,
+            "created_at": self.created_at,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "status": self._run_status,
+        }
+        atomic_write_json(self.state_path, state)
+
+    def _signal_handler(self, signum: int, _frame: object) -> None:
+        if self._stop_requested:
+            raise KeyboardInterrupt
+        self._stop_requested = True
+        print(f"\nSignal {signum} received; stopping after the current document...")
+
+    def run(self) -> str:
+        append = self.resume
+        train_writer = BinaryTokenWriter(self.train_path, self.buffer_tokens, append)
+        val_writer = BinaryTokenWriter(self.val_path, self.buffer_tokens, append)
+        status = "running"
+        old_sigint = signal.getsignal(signal.SIGINT)
+        old_sigterm = signal.getsignal(signal.SIGTERM)
+        old_sigbreak = (
+            signal.getsignal(signal.SIGBREAK) if hasattr(signal, "SIGBREAK") else None
+        )
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        if hasattr(signal, "SIGBREAK"):
+            signal.signal(signal.SIGBREAK, self._signal_handler)
+
+        self._start_time = time.monotonic()
+        self._last_report_time = self._start_time - self.progress_seconds
+        self._session_start_tokens = self.stats.total_tokens
+        self._session_start_bytes = (
+            train_writer.expected_size + val_writer.expected_size
+        )
+        self._print_header()
+
         try:
-            self._run_loop()
+            self.flush_buffers(train_writer, val_writer)
+            if self._target_reached(train_writer, val_writer):
+                status = "complete"
+            else:
+                for document in self.stream_documents():
+                    if self._stop_requested:
+                        status = "interrupted"
+                        break
+
+                    token_ids, digest, duplicate = self.tokenize_document(document)
+                    self.stream_offset += 1
+                    self.stats.processed_documents += 1
+                    if token_ids is None or digest is None:
+                        self.stats.rejected_documents += 1
+                        if duplicate:
+                            self.stats.duplicate_documents += 1
+                    else:
+                        written = self.write_tokens(
+                            token_ids, digest, train_writer, val_writer
+                        )
+                        if written:
+                            self.stats.accepted_documents += 1
+                        else:
+                            status = "complete"
+                            break
+
+                    if train_writer.should_flush or val_writer.should_flush:
+                        self.flush_buffers(train_writer, val_writer)
+                    self.progress_report(train_writer, val_writer)
+
+                    if self._target_reached(train_writer, val_writer):
+                        status = "complete"
+                        break
+                else:
+                    status = "dataset_exhausted"
         except KeyboardInterrupt:
-            print("\n[INTERRUPT] Interrupted by user")
-            self._shutdown = True
-        except Exception as e:
-            print(f"\n[ERROR] {e}")
+            status = "interrupted"
+            self._stop_requested = True
+        except Exception:
+            status = "error"
             raise
         finally:
-            self._save_resume_state()
+            self._run_status = status
+            try:
+                self.flush_buffers(train_writer, val_writer)
+                self.progress_report(train_writer, val_writer, force=True)
+                self.save_metadata(status)
+            finally:
+                train_writer.close()
+                val_writer.close()
+                signal.signal(signal.SIGINT, old_sigint)
+                signal.signal(signal.SIGTERM, old_sigterm)
+                if hasattr(signal, "SIGBREAK"):
+                    signal.signal(signal.SIGBREAK, old_sigbreak)
+
+        print(f"\nPreparation status: {status}")
+        print(f"Metadata: {self.metadata_path}")
+        return status
+
+    def _print_header(self) -> None:
+        target = (
+            f"{self.target_gb:g} GiB ({self.target_tokens:,} uint16 tokens)"
+            if self.target_gb is not None
+            else f"{self.target_documents:,} accepted documents"
+        )
+        print("=" * 72)
+        print("FineWeb-Edu streaming preparation")
+        print(f"Target          : {target}")
+        print(f"Validation split: {self.val_split:.2%}")
+        print(f"Buffer per split: {self.buffer_tokens:,} tokens")
+        print(f"Train output    : {self.train_path}")
+        print(f"Validation output: {self.val_path}")
+        print(f"Resume offset   : {self.stream_offset:,}")
+        print("=" * 72)
 
 
-def main():
+def atomic_write_json(path: Path, value: Dict[str, object]) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def memory_usage_mb() -> Optional[float]:
+    try:
+        import psutil
+
+        return psutil.Process().memory_info().rss / 1024**2
+    except ImportError:
+        pass
+
+    if os.name == "nt":
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        get_process = ctypes.windll.kernel32.GetCurrentProcess
+        if ctypes.windll.psapi.GetProcessMemoryInfo(
+            get_process(), ctypes.byref(counters), counters.cb
+        ):
+            return counters.WorkingSetSize / 1024**2
+    return None
+
+
+def release_unused_memory() -> None:
+    """Return unreachable Python and Arrow allocations after durable flushes."""
+    gc.collect()
+    try:
+        import pyarrow as pa
+
+        pa.default_memory_pool().release_unused()
+    except Exception:
+        pass
+
+
+def format_count(value: float) -> str:
+    for suffix, scale in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
+        if abs(value) >= scale:
+            return f"{value / scale:.2f}{suffix}"
+    return f"{value:,.0f}"
+
+
+def format_bytes(value: float) -> str:
+    for suffix, scale in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if abs(value) >= scale:
+            return f"{value / scale:.2f} {suffix}"
+    return f"{value:,.0f} B"
+
+
+def format_memory(value: Optional[float]) -> str:
+    return "N/A" if value is None else f"{value:.1f} MiB"
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare FineWeb-Edu dataset for AethyxLM training"
+        description="Stream FineWeb-Edu into uint16 binary training files"
     )
-    parser.add_argument(
-        "--target-gb",
-        type=float,
-        default=None,
-        help="Target size in GB (e.g., 10 for 10GB)",
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--target-gb", type=float, help="Combined output size in GiB")
+    target.add_argument(
+        "--target-documents", type=int, help="Accepted document target"
     )
+    parser.add_argument("--val-split", type=float, default=0.01)
+    parser.add_argument("--output-dir", default="data")
+    parser.add_argument("--tokenizer", default="tokenizer/tokenizer.json")
     parser.add_argument(
-        "--target-documents",
-        type=int,
-        default=None,
-        help="Target number of documents",
-    )
-    parser.add_argument(
-        "--val-split",
-        type=float,
-        default=0.01,
-        help="Validation split ratio (default: 0.01)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="data",
-        help="Output directory (default: data)",
-    )
-    parser.add_argument(
-        "--tokenizer",
-        type=str,
-        default="tokenizer/tokenizer.json",
-        help="Tokenizer path (default: tokenizer/tokenizer.json)",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume from previous interrupted run",
+        "--resume", action="store_true", help="Append from the durable state checkpoint"
     )
     parser.add_argument(
         "--resume-from",
         type=int,
+        help="Start new output files after skipping this many source documents",
+    )
+    parser.add_argument("--buffer-tokens", type=int, default=500_000)
+    parser.add_argument("--progress-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--dedup-window",
+        type=int,
         default=0,
-        help="Resume from specific document offset",
+        help="Bounded recent-document hash window; use 0 to disable",
     )
     args = parser.parse_args()
-    
-    if not args.target_gb and not args.target_documents:
-        parser.error("Either --target-gb or --target-documents must be specified")
-    
+    if args.resume and args.resume_from is not None:
+        parser.error("--resume and --resume-from cannot be used together")
+    return args
+
+
+def main() -> None:
+    args = parse_args()
     preparer = FineWebPreparer(
         target_gb=args.target_gb,
         target_documents=args.target_documents,
@@ -678,12 +742,11 @@ def main():
         output_dir=args.output_dir,
         tokenizer_path=args.tokenizer,
         resume=args.resume,
+        resume_from=args.resume_from,
+        buffer_tokens=args.buffer_tokens,
+        progress_seconds=args.progress_seconds,
+        dedup_window=args.dedup_window,
     )
-    
-    if args.resume_from:
-        # Handle resume-from-offset
-        pass
-    
     preparer.run()
 
 
