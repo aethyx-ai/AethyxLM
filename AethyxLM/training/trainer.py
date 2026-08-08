@@ -15,7 +15,6 @@ Features:
 
 import os
 import time
-import json
 import signal
 import warnings
 from pathlib import Path
@@ -33,7 +32,7 @@ except ImportError:
     TENSORBOARD_AVAILABLE = False
 
 from model.gpt import GPT
-from model.config import CONTEXT_LENGTH, VOCAB_SIZE, NUM_LAYERS
+from model.config import CONTEXT_LENGTH
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
 from training.scheduler import get_cosine_schedule_with_warmup
@@ -92,6 +91,10 @@ class Trainer:
         self.eval_interval = eval_interval
         self.save_interval = save_interval
         self.generate_interval = generate_interval
+        if self.save_interval <= 0:
+            raise ValueError("save_interval must be positive")
+        if self.eval_interval <= 0:
+            raise ValueError("eval_interval must be positive")
         
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
@@ -127,18 +130,18 @@ class Trainer:
         # Create directories
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.log_dir = Path("logs")
+        self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # TensorBoard
-        self.tensorboard_dir = Path("logs/tensorboard")
+        self.tensorboard_dir = Path(tensorboard_dir or self.log_dir / "tensorboard")
         self.tensorboard_dir.mkdir(parents=True, exist_ok=True)
         self.writer = None
         if TENSORBOARD_AVAILABLE:
-            self.writer = SummaryWriter(log_dir=str(Path("logs/tensorboard")))
+            self.writer = SummaryWriter(log_dir=str(self.tensorboard_dir))
         
         # Generated samples log
-        self.samples_log = Path("logs/generated_samples.txt")
+        self.samples_log = self.log_dir / "generated_samples.txt"
         
         # Sync control
         self._sync_in_progress = False
@@ -261,15 +264,20 @@ class Trainer:
         Save checkpoint with rotation policy.
         
         Rotation policy:
-        - Always update checkpoint_latest.pt
-        - Update checkpoint_best.pt if is_best
-        - Save numbered checkpoint ONLY at save_interval steps (or force)
-        - Keep: latest.pt, best.pt, last 3 numbered checkpoints
+        - Update checkpoint_best.pt only after a new best validation loss
+        - Update checkpoint_latest.pt at save intervals and forced shutdown/final saves
+        - Save numbered checkpoints only at positive save_interval steps
+        - Keep checkpoint_best.pt, checkpoint_latest.pt, and the last 3 numbered files
         """
+        is_interval_step = self.step > 0 and self.step % self.save_interval == 0
+        if not is_best and not force and not is_interval_step:
+            return
+
+        model = self.model.module if hasattr(self.model, "module") else self.model
         checkpoint = {
             "step": self.step,
             "epoch": self.epoch,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "scaler_state_dict": self.scaler.state_dict(),
@@ -281,32 +289,53 @@ class Trainer:
                 "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             },
             "config": {
-                "vocab_size": VOCAB_SIZE,
-                "context_length": CONTEXT_LENGTH,
-                "num_layers": NUM_LAYERS,
+                "model": {
+                    "vocab_size": model.vocab_size,
+                    "context_length": model.context_length,
+                    "embed_dim": model.embed_dim,
+                    "num_heads": model.num_heads,
+                    "num_layers": model.num_layers,
+                    "ffn_dim": model.ffn_dim,
+                    "dropout": model.dropout_rate,
+                    "use_bias": model.use_bias,
+                    "layer_norm_eps": model.layer_norm_eps,
+                    "normalization": model.normalization,
+                    "position_encoding": model.position_encoding,
+                    "ffn_type": model.ffn_type,
+                    "rope_base": model.rope_base,
+                    "rope_max_seq_len": model.rope_max_seq_len,
+                }
             }
         }
-        
-        # 1. Always update latest
-        latest_path = self.checkpoint_dir / "checkpoint_latest.pt"
-        torch.save(checkpoint, latest_path)
-        
-        # 2. Best checkpoint
+
         if is_best:
             best_path = self.checkpoint_dir / "checkpoint_best.pt"
-            torch.save(checkpoint, best_path)
-        
-        # 3. Numbered checkpoint ONLY at save_interval (or force)
-        is_interval_step = (self.step % self.save_interval == 0)
-        is_forced = force
-        
-        if (self.step % self.save_interval == 0) or force:
+            self._atomic_torch_save(checkpoint, best_path)
+            print(f"[OK] Updated {best_path.name} at step {self.step}")
+            if not force:
+                return
+
+        if force or is_interval_step:
+            latest_path = self.checkpoint_dir / "checkpoint_latest.pt"
+            self._atomic_torch_save(checkpoint, latest_path)
+            print(f"[OK] Updated {latest_path.name} at step {self.step}")
+
+        if is_interval_step:
             step_path = self.checkpoint_dir / f"checkpoint_step_{self.step}.pt"
-            torch.save(checkpoint, step_path)
+            self._atomic_torch_save(checkpoint, step_path)
             print(f"[OK] Saved checkpoint_step_{self.step}.pt")
-            
-            # Rotation: keep last 3 numbered checkpoints
             self._rotate_checkpoints()
+
+    @staticmethod
+    def _atomic_torch_save(checkpoint: dict, path: Path):
+        """Write a checkpoint completely before replacing its public path."""
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        try:
+            torch.save(checkpoint, temporary)
+            os.replace(temporary, path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
 
     def _rotate_checkpoints(self):
         """Keep last 3 numbered checkpoints + latest + best."""
@@ -326,8 +355,9 @@ class Trainer:
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+
+        model = self.model.module if hasattr(self.model, "module") else self.model
+        model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
@@ -381,18 +411,17 @@ class Trainer:
                 for batch in self.train_dataloader:
                     if self.step >= self.max_steps:
                         break
-                    
-                    print(f"[DEBUG] Step {self.step}: calling train_step", flush=True)
+
                     loss = self.train_step(batch)
                     running_loss += loss
-                    print(f"[DEBUG] Step {self.step}: train_step done, loss={loss:.4f}", flush=True)
-                    
+
                     # Optimizer step after accumulation
                     if (self.step + 1) % self.grad_accum_steps == 0:
-                        print(f"[DEBUG] Step {self.step}: calling optimizer_step", flush=True)
                         self.optimizer_step()
-                        print(f"[DEBUG] Step {self.step}: optimizer_step done", flush=True)
-                    
+
+                    # self.step is the number of completed training batches.
+                    self.step += 1
+
                     # Logging
                     if self.step % self.log_interval == 0:
                         elapsed = time.time() - step_start_time
@@ -419,10 +448,8 @@ class Trainer:
                         step_start_time = time.time()
                     
                     # Validation
-                    if self.val_dataloader and self.step > 0 and self.step % self.eval_interval == 0:
-                        print(f"[DEBUG] Step {self.step}: entering evaluation (eval_interval={self.eval_interval})", flush=True)
+                    if self.val_dataloader and self.step % self.eval_interval == 0:
                         val_loss = self.evaluate()
-                        print(f"[DEBUG] Step {self.step}: leaving evaluation, val_loss={val_loss:.4f}", flush=True)
                         print(f"Validation Loss: {val_loss:.4f}")
                         
                         if self.writer:
@@ -432,21 +459,13 @@ class Trainer:
                         if is_best:
                             self.best_val_loss = val_loss
                         
-                        # Save checkpoint at eval interval (with best flag)
-                        print(f"[DEBUG] Step {self.step}: saving checkpoint (eval)", flush=True)
-                        self._save_checkpoint(is_best=is_best)
-                        print(f"[DEBUG] Step {self.step}: checkpoint saved", flush=True)
-                    
-                    # Periodic checkpoint (only at save_interval)
+                        if is_best:
+                            self._save_checkpoint(is_best=True)
+
+                    # Periodic checkpoint at completed save_interval steps.
                     if self.step % self.save_interval == 0:
-                        print(f"[DEBUG] Step {self.step}: saving checkpoint (periodic)", flush=True)
                         self._save_checkpoint(is_best=False)
-                        print(f"[DEBUG] Step {self.step}: checkpoint saved", flush=True)
-                    
-                    print(f"[DEBUG] Step {self.step}: incrementing step to {self.step + 1}", flush=True)
-                    self.step += 1
-                    print(f"[DEBUG] Step now: {self.step}", flush=True)
-                    
+
                     if self.step >= self.max_steps:
                         break
                 
