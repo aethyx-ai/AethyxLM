@@ -23,7 +23,6 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.cuda.amp import GradScaler, autocast
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -36,6 +35,13 @@ from model.config import CONTEXT_LENGTH
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
 from training.scheduler import get_cosine_schedule_with_warmup
+
+
+def create_grad_scaler(enabled: bool):
+    """Use the current AMP scaler API with compatibility for PyTorch 2.0/2.1."""
+    if hasattr(torch.amp, "GradScaler"):
+        return torch.amp.GradScaler("cuda", enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
 class Trainer:
@@ -120,7 +126,7 @@ class Trainer:
         )
         
         # AMP
-        self.scaler = GradScaler(enabled=self.use_amp)
+        self.scaler = create_grad_scaler(enabled=self.use_amp)
         
         # Training state
         self.step = 0
@@ -164,7 +170,7 @@ class Trainer:
         targets = targets.to(self.device)
         
         if self.use_amp:
-            with autocast():
+            with torch.amp.autocast("cuda"):
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
                 loss = loss / self.grad_accum_steps
@@ -197,7 +203,7 @@ class Trainer:
             targets = targets.to(self.device)
             
             if self.use_amp:
-                with autocast():
+                with torch.amp.autocast("cuda"):
                     logits = self.model(input_ids)
                     loss = self.criterion(logits, targets)
             else:
