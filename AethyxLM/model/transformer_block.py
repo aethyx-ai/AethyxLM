@@ -69,6 +69,9 @@ class TransformerBlock(nn.Module):
         layer_norm_eps: float = None,
         normalization: str = None,
         ffn_type: str = None,
+        position_encoding: str = None,
+        rope_base: float = None,
+        rope_max_seq_len: int = None,
     ):
         super().__init__()
 
@@ -105,6 +108,9 @@ class TransformerBlock(nn.Module):
             dropout=dropout,
             context_length=context_length,
             use_bias=use_bias,
+            position_encoding=position_encoding,
+            rope_base=rope_base,
+            rope_max_seq_len=rope_max_seq_len,
         )
 
         # Second Normalization

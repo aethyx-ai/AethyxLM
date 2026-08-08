@@ -163,7 +163,7 @@ def download_tinystories(data_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Train AethyxLM on Kaggle")
-    parser.add_argument('--config', type=str, default='configs/train_config_kaggle.json',
+    parser.add_argument('--config', type=str, default='configs/train_config_modern.json',
                         help='Path to training config JSON')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume from')
@@ -234,7 +234,7 @@ def main():
     # Create model with actual vocab size
     if is_main_process:
         print("Creating model...")
-    model = GPT(vocab_size=actual_vocab_size)
+    model = GPT(vocab_size=actual_vocab_size, config=model_config)
     model.to(device)
     
     # Wrap with DDP if using multi-GPU

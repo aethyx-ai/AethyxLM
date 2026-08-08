@@ -93,6 +93,9 @@ class GPT(nn.Module):
                     layer_norm_eps=self.layer_norm_eps,
                     normalization=self.normalization,
                     ffn_type=self.ffn_type,
+                    position_encoding=self.position_encoding,
+                    rope_base=self.rope_base,
+                    rope_max_seq_len=self.rope_max_seq_len,
                 )
                 for _ in range(self.num_layers)
             ]

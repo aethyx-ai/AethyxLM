@@ -166,7 +166,7 @@ class MultiHeadSelfAttention(nn.Module):
         if position_encoding == "rope":
             self.rope = RotaryEmbedding(
                 head_dim=self.head_dim,
-                max_seq_len=context_length,  # Use config context length for initial cache
+                max_seq_len=rope_max_seq_len,
                 base=rope_base,
             )
         else:
