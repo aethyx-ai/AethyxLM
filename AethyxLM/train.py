@@ -30,9 +30,20 @@ from training.scheduler import get_cosine_schedule_with_warmup
 from utils.seed import set_seed
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def resolve_project_path(path: str) -> Path:
+    """Resolve configured relative paths from the repository root."""
+    resolved = Path(path).expanduser()
+    if not resolved.is_absolute():
+        resolved = PROJECT_ROOT / resolved
+    return resolved.resolve()
+
+
 def load_config(config_path: str) -> dict:
     """Load training configuration from JSON file."""
-    with open(config_path, 'r') as f:
+    with resolve_project_path(config_path).open('r', encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -466,7 +477,7 @@ def main():
         min_lr_ratio=train_config['min_lr_ratio'],
         grad_accum_steps=train_config['grad_accum_steps'],
         use_amp=train_config['use_amp'] and device.startswith('cuda'),
-        checkpoint_dir=checkpoint_config['checkpoint_dir'],
+        checkpoint_dir=str(resolve_project_path(checkpoint_config['checkpoint_dir'])),
         log_interval=checkpoint_config['log_interval'],
         eval_interval=train_config['eval_interval'],
         save_interval=checkpoint_config['save_interval'],
@@ -478,7 +489,7 @@ def main():
     if args.resume:
         if is_main_process:
             print(f"Resuming from {args.resume}")
-        trainer.load_checkpoint(args.resume)
+        trainer.load_checkpoint(str(resolve_project_path(args.resume)))
     
     # Train
     if is_main_process:

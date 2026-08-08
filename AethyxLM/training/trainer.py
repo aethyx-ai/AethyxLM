@@ -92,7 +92,6 @@ class Trainer:
         self.max_steps = max_steps
         self.grad_accum_steps = grad_accum_steps
         self.use_amp = use_amp and torch.cuda.is_available()
-        self.checkpoint_dir = Path(checkpoint_dir)
         self.log_interval = log_interval
         self.eval_interval = eval_interval
         self.save_interval = save_interval
@@ -134,7 +133,7 @@ class Trainer:
         self.best_val_loss = float('inf')
         
         # Create directories
-        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir = Path(checkpoint_dir).expanduser().resolve()
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
