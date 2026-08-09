@@ -106,7 +106,7 @@ def save_run_config(config: dict, log_dir: Path, git_hash: str):
         "tokenizer_config": config.get('tokenizer', {}),
     }
     
-    run_config_path = Path("logs/run_config.json")
+    run_config_path = log_dir / "run_config.json"
     run_config_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(run_config_path, 'w') as f:
@@ -157,7 +157,7 @@ def download_tinystories(data_dir: Path):
         train_texts = texts[:split_idx]
         val_texts = texts[split_idx:]
         
-        data_dir = Path("data")
+        data_dir = Path(data_dir)
         data_dir.mkdir(exist_ok=True)
         
         with open(data_dir / "train.txt", "w", encoding="utf-8") as f:
@@ -205,6 +205,10 @@ def main():
     train_config = config['training']
     data_config = config['data']
     checkpoint_config = config['checkpoint']
+    tokenizer_config = config.get('tokenizer', {})
+    tokenizer_path = resolve_project_path(
+        tokenizer_config.get('tokenizer_file', 'tokenizer/tokenizer.json')
+    )
     
     # Get git hash for reproducibility
     git_hash = get_git_commit_hash()
@@ -225,14 +229,20 @@ def main():
     
     # Save run config for reproducibility (only on main process)
     if is_main_process:
-        save_run_config(config, Path("logs"), git_hash)
+        save_run_config(config, resolve_project_path("logs"), git_hash)
     
     # Load tokenizer first to get actual vocab size (only on rank 0)
     if is_main_process:
         print("Loading tokenizer...")
-        tokenizer = AethyxTokenizer()
+        tokenizer = AethyxTokenizer(tokenizer_path)
         actual_vocab_size = tokenizer.vocab_size
         print(f"Tokenizer vocab size: {actual_vocab_size}")
+        configured_vocab = tokenizer_config.get('vocab_size')
+        if configured_vocab is not None and configured_vocab != actual_vocab_size:
+            raise ValueError(
+                f"Tokenizer config declares {configured_vocab} tokens, but "
+                f"{tokenizer_path} contains {actual_vocab_size}."
+            )
     else:
         actual_vocab_size = None
     
@@ -247,6 +257,13 @@ def main():
         print("Creating model...")
     model = GPT(vocab_size=actual_vocab_size, config=model_config)
     model.to(device)
+
+    if train_config.get('torch_compile', False):
+        if not hasattr(model, 'compile'):
+            raise RuntimeError("torch.compile requires a newer PyTorch version")
+        if is_main_process:
+            print(f"Compiling model ({train_config.get('compile_mode', 'default')})...")
+        model.compile(mode=train_config.get('compile_mode', 'default'))
     
     # Wrap with DDP if using multi-GPU
     if is_ddp:
@@ -271,8 +288,8 @@ def main():
         # Check if all .bin files exist
         all_exist = True
         for ds_config in datasets_config:
-            train_bin = Path(ds_config['train'])
-            val_bin = Path(ds_config.get('val', ds_config['train']))
+            train_bin = resolve_project_path(ds_config['train'])
+            val_bin = resolve_project_path(ds_config.get('val', ds_config['train']))
             if not train_bin.exists() or (val_bin.exists() and val_bin.stat().st_size == 0):
                 all_exist = False
                 break
@@ -280,30 +297,47 @@ def main():
                 # val file is optional, but if it exists it should be valid
                 pass
         
-        if not all_exist:
-            if is_main_process:
-                print("Some .bin files missing. Will need to prepare datasets.")
-            # Try to download/prepare each dataset
+        if not all_exist and is_main_process:
+            print("Some binary datasets are missing; preparing them on rank 0.")
             for ds_config in datasets_config:
                 name = ds_config.get('name', 'unknown')
-                if name == 'tinystories':
-                    if is_main_process:
-                        print("Preparing TinyStories...")
-                    if not download_tinystories(Path("data")):
+                train_bin = resolve_project_path(ds_config['train'])
+                val_bin = resolve_project_path(ds_config.get('val', ds_config['train']))
+                if name == 'tinystories' and (
+                    not train_bin.exists() or not val_bin.exists()
+                ):
+                    print("Preparing TinyStories...")
+                    data_dir = train_bin.parent
+                    if not download_tinystories(data_dir):
                         raise RuntimeError("Failed to download TinyStories")
-                elif name == 'fineweb_edu':
-                    if is_main_process:
-                        print("FineWeb-Edu should be prepared with scripts/prepare_fineweb.py")
-                    # Note: FineWeb-Edu preparation is done separately via scripts/prepare_fineweb.py
-                    train_bin = Path(ds_config['train'])
-                    if not train_bin.exists():
-                        raise FileNotFoundError(
-                            f"FineWeb-Edu training data not found at '{train_bin}'. "
-                            "Run: python scripts/prepare_fineweb.py --target-gb 10"
+                    for binary_path in {train_bin, val_bin}:
+                        raw_path = binary_path.with_suffix('.txt')
+                        if not raw_path.exists():
+                            raise FileNotFoundError(
+                                f"TinyStories source was not created at {raw_path}"
+                            )
+                        AethyxDataset(
+                            raw_path,
+                            context_length=data_config['context_length'],
+                            tokenizer_path=tokenizer_path,
                         )
+                elif name == 'fineweb_edu' and not train_bin.exists():
+                    raise FileNotFoundError(
+                        f"FineWeb-Edu training data not found at '{train_bin}'. "
+                        "Run: python scripts/prepare_fineweb.py --target-gb 10"
+                    )
         
         if is_ddp:
             dist.barrier()
+
+        # Every rank validates rank 0's completed preparation before mmap.
+        for ds_config in datasets_config:
+            for key in ('train', 'val'):
+                if key not in ds_config:
+                    continue
+                binary_path = resolve_project_path(ds_config[key])
+                if not binary_path.exists() or binary_path.stat().st_size == 0:
+                    raise FileNotFoundError(f"Prepared dataset is missing or empty: {binary_path}")
         
         # Tokenize on rank 0 ONLY, then all ranks load
         if is_main_process:
@@ -312,7 +346,7 @@ def main():
                 for f_key in ['train', 'val']:
                     if f_key in ds_config:
                         f = ds_config[f_key]
-                        bin_f = Path(f)
+                        bin_f = resolve_project_path(f)
                         if bin_f.exists() and bin_f.stat().st_size == 0:
                             print(f"  Removing empty .bin file: {bin_f}")
                             bin_f.unlink()
@@ -328,21 +362,29 @@ def main():
         mixed_datasets_config = []
         for ds_config in datasets_config:
             mixed_datasets_config.append({
-                'train': ds_config['train'],
-                'val': ds_config.get('val', ds_config['train']),
+                'train': str(resolve_project_path(ds_config['train'])),
+                'val': str(resolve_project_path(ds_config.get('val', ds_config['train']))),
                 'weight': ds_config.get('weight', 1.0),
             })
         
         train_dataset = MixedAethyxDataset(
             mixed_datasets_config,
             context_length=data_config['context_length'],
+            tokenizer_path=tokenizer_path,
         )
         
-        # For validation, we can use a small mixed dataset or just the first dataset's val
-        # For simplicity, use the first dataset's val file
-        val_dataset = AethyxDataset(
-            text_path=datasets_config[0].get('val', datasets_config[0]['train']),
+        validation_configs = [
+            {
+                'train': str(resolve_project_path(item.get('val', item['train']))),
+                'weight': item.get('weight', 1.0),
+            }
+            for item in datasets_config
+        ]
+        val_dataset = MixedAethyxDataset(
+            validation_configs,
             context_length=data_config['context_length'],
+            seed=seed + 1,
+            tokenizer_path=tokenizer_path,
         )
         
         if is_main_process:
@@ -351,8 +393,8 @@ def main():
         
     else:
         # Legacy single dataset format
-        train_file = Path(data_config['train_file'])
-        val_file = Path(data_config.get('val_file', 'data/val.txt'))
+        train_file = resolve_project_path(data_config['train_file'])
+        val_file = resolve_project_path(data_config.get('val_file', 'data/val.txt'))
 
         if train_file.exists() and val_file.exists():
             if is_main_process:
@@ -376,25 +418,27 @@ def main():
         if is_main_process:
             print("Tokenizing datasets (rank 0)...")
             # Remove any existing empty .bin files to force re-tokenization
-            for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+            for f in [train_file, val_file if val_file.exists() else train_file]:
                 bin_f = Path(f).with_suffix('.bin')
                 if bin_f.exists() and bin_f.stat().st_size == 0:
                     print(f"  Removing empty .bin file: {bin_f}")
                     bin_f.unlink()
             
             train_ds = AethyxDataset(
-                text_path=data_config['train_file'],
+                text_path=train_file,
                 context_length=data_config['context_length'],
+                tokenizer_path=tokenizer_path,
             )
             print(f"Train tokens: {len(train_ds._data):,}")
             val_ds = AethyxDataset(
-                text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
+                text_path=val_file if val_file.exists() else train_file,
                 context_length=data_config['context_length'],
+                tokenizer_path=tokenizer_path,
             )
             print(f"Val tokens: {len(val_ds._data):,}")
             # Verify .bin files exist and non-empty
             import os
-            for f in [data_config['train_file'], data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file']]:
+            for f in [train_file, val_file if val_file.exists() else train_file]:
                 bin_f = str(Path(f).with_suffix('.bin'))
                 size = os.path.getsize(bin_f)
                 print(f"  {bin_f}: {size:,} bytes")
@@ -408,13 +452,15 @@ def main():
         if is_main_process:
             print("Loading datasets...")
         train_dataset = AethyxDataset(
-            text_path=data_config['train_file'],
+            text_path=train_file,
             context_length=data_config['context_length'],
+            tokenizer_path=tokenizer_path,
         )
         
         val_dataset = AethyxDataset(
-            text_path=data_config['val_file'] if Path(data_config['val_file']).exists() else data_config['train_file'],
+            text_path=val_file if val_file.exists() else train_file,
             context_length=data_config['context_length'],
+            tokenizer_path=tokenizer_path,
         )
         
         if is_main_process:
@@ -477,7 +523,18 @@ def main():
         min_lr_ratio=train_config['min_lr_ratio'],
         grad_accum_steps=train_config['grad_accum_steps'],
         use_amp=train_config['use_amp'] and device.startswith('cuda'),
+        amp_dtype=train_config.get('amp_dtype', 'auto'),
+        fused_optimizer=train_config.get('fused_optimizer', False),
+        z_loss_coefficient=train_config.get('z_loss_coefficient', 0.0),
+        context_schedule=train_config.get('context_schedule'),
+        tokenizer_sha256=(tokenizer.sha256 if is_main_process else None),
+        eval_batches=train_config.get('eval_batches'),
+        tokenizer_path=str(tokenizer_path),
         checkpoint_dir=str(resolve_project_path(checkpoint_config['checkpoint_dir'])),
+        log_dir=str(resolve_project_path(checkpoint_config.get('log_dir', 'logs'))),
+        tensorboard_dir=str(
+            resolve_project_path(checkpoint_config.get('tensorboard_dir', 'logs/tensorboard'))
+        ),
         log_interval=checkpoint_config['log_interval'],
         eval_interval=train_config['eval_interval'],
         save_interval=checkpoint_config['save_interval'],

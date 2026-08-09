@@ -16,8 +16,10 @@ from model.gpt import GPT
 from tokenizer.tokenizer import AethyxTokenizer
 
 
-def find_best_checkpoint(ckpt_dir="checkpoints"):
+def find_best_checkpoint(ckpt_dir=None):
     """Find the best checkpoint: latest step checkpoint, or best if newer than latest."""
+    if ckpt_dir is None:
+        ckpt_dir = Path(__file__).resolve().parent / "checkpoints"
     ckpt_dir = Path(ckpt_dir)
     if not ckpt_dir.exists():
         raise FileNotFoundError(f"Checkpoint directory not found: {ckpt_dir}")
@@ -73,13 +75,16 @@ def safe_print(text):
 @torch.no_grad()
 def generate(model, tok, prompt, max_new=200, temp=0.8, top_k=50):
     """Generate text from a prompt."""
+    if temp <= 0:
+        raise ValueError("temperature must be positive")
     model.eval()
     context_length = model.context_length if hasattr(model, 'context_length') else 128
     ids = torch.tensor([tok.encode(prompt)], dtype=torch.long, device=next(model.parameters()).device)
+    ids = ids[:, -context_length:]
     prompt_len = len(ids[0])  # Track where generation starts
+    logits, cache = model(ids, use_cache=True)
     
     for _ in range(max_new):
-        logits = model(ids[:, -context_length:])
         logits = logits[:, -1, :] / temp
         
         if top_k > 0:
@@ -89,6 +94,12 @@ def generate(model, tok, prompt, max_new=200, temp=0.8, top_k=50):
         probs = torch.softmax(logits, dim=-1)
         next_id = torch.multinomial(probs, 1)
         ids = torch.cat([ids, next_id], dim=1)
+        if tok.eos_id is not None and int(next_id.item()) == tok.eos_id:
+            break
+        if cache[0][0].size(2) >= context_length:
+            logits, cache = model(ids[:, -context_length:], use_cache=True)
+        else:
+            logits, cache = model(next_id, kv_cache=cache, use_cache=True)
         
         # Check stop conditions on generated portion ONLY
         gen_ids = ids[0][prompt_len:]
@@ -188,18 +199,31 @@ def main():
     embed_dim = model_state["token_embedding.weight"].shape[1]
     
     # Build model config from checkpoint
-    model_config = ckpt.get("config", {})
+    checkpoint_config = ckpt.get("config", {})
+    model_config = checkpoint_config.get("model", checkpoint_config).copy()
     model_config["vocab_size"] = vocab_size
     model_config["embed_dim"] = embed_dim
     
     print(f"Checkpoint config: vocab={vocab_size}, embed={embed_dim}, ctx={model_config.get('context_length')}, layers={model_config.get('num_layers')}")
     
     model = GPT(vocab_size=vocab_size, config=model_config)
-    model.load_state_dict(ckpt["model_state_dict"])
+    model.load_compatible_state_dict(ckpt["model_state_dict"], strict=True)
     model.to(device)
     model.eval()
     
-    tok = AethyxTokenizer()
+    tokenizer_info = ckpt.get("config", {}).get("tokenizer", {})
+    tokenizer_name = tokenizer_info.get("file_name") or "tokenizer.json"
+    tokenizer_path = Path(__file__).resolve().parent / "tokenizer" / tokenizer_name
+    tok = AethyxTokenizer(tokenizer_path)
+    expected_tokenizer_hash = (
+        tokenizer_info.get("sha256")
+        or ckpt.get("config", {}).get("tokenizer_sha256")
+    )
+    if expected_tokenizer_hash and tok.sha256 != expected_tokenizer_hash:
+        raise RuntimeError(
+            f"Checkpoint expects tokenizer SHA256 {expected_tokenizer_hash}, "
+            f"but {tokenizer_path} has {tok.sha256}."
+        )
     print(f"Loaded step: {ckpt.get('step', 'unknown')}")
     print(f"Tokenizer vocab: {tok.vocab_size}")
     print(f"Model vocab: {vocab_size}")

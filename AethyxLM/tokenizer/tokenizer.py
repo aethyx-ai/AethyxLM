@@ -6,6 +6,7 @@ Author: Aethyx Labs
 """
 
 from pathlib import Path
+import hashlib
 
 from tokenizers import Tokenizer
 
@@ -28,6 +29,8 @@ class AethyxTokenizer:
             )
 
         self.tokenizer = Tokenizer.from_file(str(tokenizer_path))
+        self.path = tokenizer_path.resolve()
+        self.sha256 = hashlib.sha256(self.path.read_bytes()).hexdigest()
 
     def encode(self, text: str):
         """
@@ -53,6 +56,22 @@ class AethyxTokenizer:
         encoding = self.tokenizer.encode(text)
 
         return encoding.tokens
+
+    def token_to_id(self, token: str):
+        """Return the integer ID for a token, or ``None`` when absent."""
+        return self.tokenizer.token_to_id(token)
+
+    @property
+    def eos_id(self):
+        return self.token_to_id("<EOS>")
+
+    @property
+    def bos_id(self):
+        return self.token_to_id("<BOS>")
+
+    @property
+    def pad_id(self):
+        return self.token_to_id("<PAD>")
 
     @property
     def vocab_size(self):

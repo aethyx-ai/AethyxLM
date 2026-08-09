@@ -12,6 +12,7 @@ def create_optimizer(
     weight_decay: float = 0.1,
     betas: tuple = (0.9, 0.95),
     eps: float = 1e-8,
+    fused: bool = False,
 ) -> AdamW:
     """
     Create AdamW optimizer with weight decay.
@@ -45,11 +46,14 @@ def create_optimizer(
         {"params": no_decay_params, "weight_decay": 0.0},
     ]
     
-    optimizer = AdamW(
-        param_groups,
-        lr=learning_rate,
-        betas=betas,
-        eps=eps,
-    )
+    optimizer_kwargs = {
+        "params": param_groups,
+        "lr": learning_rate,
+        "betas": betas,
+        "eps": eps,
+    }
+    if fused:
+        optimizer_kwargs["fused"] = True
+    optimizer = AdamW(**optimizer_kwargs)
     
     return optimizer

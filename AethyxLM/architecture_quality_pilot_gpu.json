@@ -1,0 +1,53 @@
+{
+  "experiment": "short controlled scaling pilot",
+  "warning": "Short equal-token runs validate feasibility and learning behavior, not frontier intelligence or a scaling law.",
+  "device": "NVIDIA GeForce MX450",
+  "torch": "2.11.0+cu130",
+  "settings": {
+    "train_data": "data/train.bin",
+    "validation_data": "data/val.bin",
+    "vocab_size": 1908,
+    "context_length": 128,
+    "batch_size": 1,
+    "grad_accumulation": 4,
+    "steps": 100,
+    "eval_batches": 8,
+    "learning_rate": 0.0003,
+    "max_vram_fraction": 0.82,
+    "models": "classic_7m,modern_7m",
+    "seed": 42,
+    "output": "architecture_quality_pilot_gpu.json"
+  },
+  "runs": {
+    "classic_7m": {
+      "status": "completed",
+      "parameters": 6839808,
+      "initial_validation_loss": 7.574737548828125,
+      "final_validation_loss": 5.0411376953125,
+      "validation_perplexity": 154.64585484501006,
+      "mean_training_loss": 5.762415008544922,
+      "last_training_loss": 5.219688415527344,
+      "optimizer_steps": 100,
+      "trained_tokens": 51200,
+      "tokens_per_second": 2199.9510596999894,
+      "elapsed_seconds": 23.27324499981478,
+      "peak_vram_bytes": 165157888,
+      "amp_dtype": "torch.bfloat16"
+    },
+    "modern_7m": {
+      "status": "completed",
+      "parameters": 8094976,
+      "initial_validation_loss": 7.58642578125,
+      "final_validation_loss": 4.893821716308594,
+      "validation_perplexity": 133.46265705931935,
+      "mean_training_loss": 5.7399990844726565,
+      "last_training_loss": 4.753143310546875,
+      "optimizer_steps": 100,
+      "trained_tokens": 51200,
+      "tokens_per_second": 852.1730712921403,
+      "elapsed_seconds": 60.08169199991971,
+      "peak_vram_bytes": 207197184,
+      "amp_dtype": "torch.bfloat16"
+    }
+  }
+}

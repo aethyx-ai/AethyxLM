@@ -43,6 +43,7 @@ class RotaryEmbedding(nn.Module):
         head_dim: int,
         max_seq_len: int = 8192,
         base: float = 10000.0,
+        scaling_factor: float = 1.0,
     ):
         super().__init__()
 
@@ -52,6 +53,9 @@ class RotaryEmbedding(nn.Module):
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.base = base
+        if scaling_factor < 1.0:
+            raise ValueError("RoPE scaling_factor must be at least 1.0")
+        self.scaling_factor = scaling_factor
 
         # Precompute frequencies
         # theta_i = base^(-2i/d) for i in [0, head_dim/2)
@@ -71,6 +75,7 @@ class RotaryEmbedding(nn.Module):
 
         # t = [0, 1, ..., seq_len - 1]
         t = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
+        t = t / self.scaling_factor
 
         # freqs = t * inv_freq  -> (seq_len, head_dim // 2)
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
@@ -88,6 +93,7 @@ class RotaryEmbedding(nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         seq_len: Optional[int] = None,
+        position_offset: int = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Apply RoPE to query and key tensors.
@@ -104,13 +110,14 @@ class RotaryEmbedding(nn.Module):
             seq_len = q.size(2)
 
         # Ensure cache is large enough
-        if seq_len > self.cos_cached.size(0):
-            self._update_cache(seq_len)
+        required_length = position_offset + seq_len
+        if required_length > self.cos_cached.size(0):
+            self._update_cache(required_length)
 
         # Get sin/cos for the sequence length
         # Shape: (seq_len, head_dim)
-        cos = self.cos_cached[:seq_len]
-        sin = self.sin_cached[:seq_len]
+        cos = self.cos_cached[position_offset:required_length]
+        sin = self.sin_cached[position_offset:required_length]
 
         # Reshape for broadcasting: (1, 1, seq_len, head_dim)
         cos = cos.unsqueeze(0).unsqueeze(0)
@@ -169,6 +176,7 @@ def build_rope(
     head_dim: int,
     max_seq_len: int = 8192,
     base: float = 10000.0,
+    scaling_factor: float = 1.0,
 ) -> RotaryEmbedding:
     """
     Factory function to build RoPE module.
@@ -185,4 +193,5 @@ def build_rope(
         head_dim=head_dim,
         max_seq_len=max_seq_len,
         base=base,
+        scaling_factor=scaling_factor,
     )

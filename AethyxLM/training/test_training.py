@@ -44,6 +44,15 @@ def test_loss():
     print("  [OK] LanguageModelLoss test passed")
 
 
+def test_loss_accepts_non_contiguous_curriculum_targets():
+    criterion = LanguageModelLoss()
+    logits = torch.randn(2, 8, 32)
+    targets = torch.randint(0, 32, (2, 16))[:, :8]
+    assert not targets.is_contiguous()
+    loss = criterion(logits, targets)
+    assert torch.isfinite(loss)
+
+
 def test_optimizer():
     """Test AdamW optimizer creation."""
     print("Testing AdamW optimizer...")
@@ -88,6 +97,7 @@ def test_scheduler():
     
     # Check warmup
     for step in range(warmup_steps):
+        optimizer.step()
         scheduler.step()
         lr = optimizer.param_groups[0]["lr"]
         expected = 3e-4 * (step + 1) / warmup_steps
@@ -95,6 +105,7 @@ def test_scheduler():
     
     # Check cosine decay
     for step in range(warmup_steps, max_steps):
+        optimizer.step()
         scheduler.step()
         lr = optimizer.param_groups[0]["lr"]
         assert lr <= 3e-4, f"LR should decay: {lr}"

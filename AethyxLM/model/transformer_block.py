@@ -62,6 +62,7 @@ class TransformerBlock(nn.Module):
         self,
         embed_dim: int = None,
         num_heads: int = None,
+        num_kv_heads: int = None,
         ffn_dim: int = None,
         dropout: float = None,
         context_length: int = None,
@@ -72,6 +73,11 @@ class TransformerBlock(nn.Module):
         position_encoding: str = None,
         rope_base: float = None,
         rope_max_seq_len: int = None,
+        rope_scaling_factor: float = 1.0,
+        fused_qkv: bool = False,
+        use_sdpa: bool = True,
+        qk_norm: bool = False,
+        sliding_window: int = None,
     ):
         super().__init__()
 
@@ -105,12 +111,18 @@ class TransformerBlock(nn.Module):
         self.attention = MultiHeadSelfAttention(
             embed_dim=embed_dim,
             num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
             dropout=dropout,
             context_length=context_length,
             use_bias=use_bias,
             position_encoding=position_encoding,
             rope_base=rope_base,
             rope_max_seq_len=rope_max_seq_len,
+            rope_scaling_factor=rope_scaling_factor,
+            fused_qkv=fused_qkv,
+            use_sdpa=use_sdpa,
+            qk_norm=qk_norm,
+            sliding_window=sliding_window,
         )
 
         # Second Normalization
@@ -132,7 +144,9 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-    ) -> torch.Tensor:
+        kv_cache=None,
+        use_cache: bool = False,
+    ):
         """
         Forward pass.
 
@@ -153,7 +167,12 @@ class TransformerBlock(nn.Module):
 
         x = self.norm1(x)
 
-        x = self.attention(x)
+        attention_result = self.attention(x, kv_cache=kv_cache, use_cache=use_cache)
+        if use_cache:
+            x, present = attention_result
+        else:
+            x = attention_result
+            present = None
 
         x = x + residual
 
@@ -169,4 +188,4 @@ class TransformerBlock(nn.Module):
 
         x = x + residual
 
-        return x
+        return (x, present) if use_cache else x

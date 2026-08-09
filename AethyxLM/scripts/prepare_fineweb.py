@@ -278,6 +278,8 @@ class FineWebPreparer:
             return None, digest, False
         if not token_ids:
             return None, digest, False
+        if self.tokenizer.eos_id is not None:
+            token_ids.append(self.tokenizer.eos_id)
         if min(token_ids) < 0 or max(token_ids) > np.iinfo(np.uint16).max:
             raise ValueError("Tokenizer emitted an ID outside the uint16 range")
         return token_ids, digest, False

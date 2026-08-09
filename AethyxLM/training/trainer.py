@@ -17,11 +17,13 @@ import os
 import time
 import signal
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 
 try:
@@ -82,8 +84,18 @@ class Trainer:
         tensorboard_dir: Optional[str] = None,
         log_dir: str = "logs",
         seed: int = 42,
+        amp_dtype: str = "auto",
+        fused_optimizer: bool = False,
+        z_loss_coefficient: float = 0.0,
+        context_schedule: Optional[list] = None,
+        tokenizer_sha256: Optional[str] = None,
+        eval_batches: Optional[int] = None,
+        tokenizer_path: Optional[str] = None,
     ):
         self.model = model
+        self.is_distributed = dist.is_available() and dist.is_initialized()
+        self.rank = dist.get_rank() if self.is_distributed else 0
+        self.is_main_process = self.rank == 0
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         
@@ -92,6 +104,20 @@ class Trainer:
         self.max_steps = max_steps
         self.grad_accum_steps = grad_accum_steps
         self.use_amp = use_amp and torch.cuda.is_available()
+        if amp_dtype not in {"auto", "float16", "bfloat16"}:
+            raise ValueError("amp_dtype must be auto, float16, or bfloat16")
+        bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        self.amp_dtype = (
+            torch.bfloat16
+            if amp_dtype == "bfloat16" or (amp_dtype == "auto" and bf16_supported)
+            else torch.float16
+        )
+        self.context_schedule = sorted(
+            context_schedule or [], key=lambda item: int(item["step"])
+        )
+        self.tokenizer_sha256 = tokenizer_sha256
+        self.eval_batches = eval_batches
+        self.tokenizer_path = tokenizer_path
         self.log_interval = log_interval
         self.eval_interval = eval_interval
         self.save_interval = save_interval
@@ -105,7 +131,7 @@ class Trainer:
         self.model.to(self.device)
         
         # Loss
-        self.criterion = LanguageModelLoss()
+        self.criterion = LanguageModelLoss(z_loss_coefficient=z_loss_coefficient)
         
         # Optimizer
         self.optimizer = create_optimizer(
@@ -114,6 +140,7 @@ class Trainer:
             weight_decay=weight_decay,
             betas=betas,
             eps=eps,
+            fused=fused_optimizer and self.device.startswith("cuda"),
         )
         
         # Scheduler
@@ -125,12 +152,15 @@ class Trainer:
         )
         
         # AMP
-        self.scaler = create_grad_scaler(enabled=self.use_amp)
+        self.scaler = create_grad_scaler(
+            enabled=self.use_amp and self.amp_dtype == torch.float16
+        )
         
         # Training state
         self.step = 0
         self.epoch = 0
         self.best_val_loss = float('inf')
+        self.tokens_seen = 0
         
         # Create directories
         self.checkpoint_dir = Path(checkpoint_dir).expanduser().resolve()
@@ -142,7 +172,7 @@ class Trainer:
         self.tensorboard_dir = Path(tensorboard_dir or self.log_dir / "tensorboard")
         self.tensorboard_dir.mkdir(parents=True, exist_ok=True)
         self.writer = None
-        if TENSORBOARD_AVAILABLE:
+        if TENSORBOARD_AVAILABLE and self.is_main_process:
             self.writer = SummaryWriter(log_dir=str(self.tensorboard_dir))
         
         # Generated samples log
@@ -163,13 +193,20 @@ class Trainer:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+    def _raw_model(self):
+        return self.model.module if hasattr(self.model, "module") else self.model
+
     def train_step(self, batch) -> float:
         input_ids, targets = batch
+        active_context = self._active_context_length()
+        input_ids = input_ids[:, :active_context]
+        targets = targets[:, :active_context]
+        self.last_batch_tokens = input_ids.numel()
         input_ids = input_ids.to(self.device)
         targets = targets.to(self.device)
         
         if self.use_amp:
-            with torch.amp.autocast("cuda"):
+            with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
                 loss = loss / self.grad_accum_steps
@@ -180,6 +217,17 @@ class Trainer:
         
         self.scaler.scale(loss).backward()
         return loss.item() * self.grad_accum_steps
+
+    def _active_context_length(self) -> int:
+        """Return the curriculum context length for the current step."""
+        model = self._raw_model()
+        length = model.context_length
+        for stage in self.context_schedule:
+            if self.step >= int(stage["step"]):
+                length = min(int(stage["context_length"]), model.context_length)
+            else:
+                break
+        return length
 
     def optimizer_step(self) -> float:
         self.scaler.unscale_(self.optimizer)
@@ -197,12 +245,14 @@ class Trainer:
         num_batches = 0
         
         for batch in self.val_dataloader:
+            if self.eval_batches is not None and num_batches >= self.eval_batches:
+                break
             input_ids, targets = batch
             input_ids = input_ids.to(self.device)
             targets = targets.to(self.device)
             
             if self.use_amp:
-                with torch.amp.autocast("cuda"):
+                with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                     logits = self.model(input_ids)
                     loss = self.criterion(logits, targets)
             else:
@@ -213,27 +263,47 @@ class Trainer:
             num_batches += 1
         
         self.model.train()
+        if getattr(self, "is_distributed", False):
+            totals = torch.tensor(
+                [total_loss, float(num_batches)], device=self.device, dtype=torch.float64
+            )
+            dist.all_reduce(totals, op=dist.ReduceOp.SUM)
+            total_loss, num_batches = totals.tolist()
         return total_loss / max(1, num_batches)
 
     @torch.no_grad()
     def generate_sample(self, prompt: str = "Once upon a time", max_new_tokens: int = 100, temperature: float = 0.8, top_k: int = 50) -> str:
         from tokenizer.tokenizer import AethyxTokenizer
-        tokenizer = AethyxTokenizer()
+        tokenizer = (
+            AethyxTokenizer(self.tokenizer_path)
+            if self.tokenizer_path
+            else AethyxTokenizer()
+        )
+        if temperature <= 0:
+            raise ValueError("temperature must be positive")
         self.model.eval()
         
+        model = self._raw_model()
         ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long, device=self.device)
+        ids = ids[:, -model.context_length:]
+        logits, cache = model(ids, use_cache=True)
         
         for _ in range(max_new_tokens):
-            logits = self.model(ids[:, -CONTEXT_LENGTH:])  # Crop to context length
             logits = logits[:, -1, :] / temperature
             
             if top_k > 0:
-                v, _ = torch.topk(logits, top_k)
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('inf')
             
             probs = torch.softmax(logits, dim=-1)
             next_id = torch.multinomial(probs, num_samples=1)
             ids = torch.cat([ids, next_id], dim=1)
+            if tokenizer.eos_id is not None and int(next_id.item()) == tokenizer.eos_id:
+                break
+            if cache[0][0].size(2) >= model.context_length:
+                logits, cache = model(ids[:, -model.context_length:], use_cache=True)
+            else:
+                logits, cache = model(next_id, kv_cache=cache, use_cache=True)
         
         self.model.train()
         return tokenizer.decode(ids[0].tolist())
@@ -261,7 +331,10 @@ class Trainer:
             warnings.warn(f"Sample generation failed: {e}")
 
     def save_checkpoint(self, is_best: bool = False, force: bool = False):
-        """Public interface for saving checkpoints."""
+        """Save on explicit request; best checkpoints retain alias-only semantics."""
+        if not is_best and not force:
+            is_interval_step = self.step > 0 and self.step % self.save_interval == 0
+            force = not is_interval_step
         self._save_checkpoint(is_best=is_best, force=force)
 
     def _save_checkpoint(self, is_best: bool = False, force: bool = False):
@@ -274,11 +347,13 @@ class Trainer:
         - Save numbered checkpoints only at positive save_interval steps
         - Keep checkpoint_best.pt, checkpoint_latest.pt, and the last 3 numbered files
         """
+        if not getattr(self, "is_main_process", True):
+            return
         is_interval_step = self.step > 0 and self.step % self.save_interval == 0
         if not is_best and not force and not is_interval_step:
             return
 
-        model = self.model.module if hasattr(self.model, "module") else self.model
+        model = self._raw_model()
         checkpoint = {
             "step": self.step,
             "epoch": self.epoch,
@@ -287,6 +362,7 @@ class Trainer:
             "scheduler_state_dict": self.scheduler.state_dict(),
             "scaler_state_dict": self.scaler.state_dict(),
             "best_val_loss": self.best_val_loss,
+            "tokens_seen": getattr(self, "tokens_seen", 0),
             "rng_state": {
                 "python": __import__('random').getstate(),
                 "numpy": __import__('numpy').random.get_state(),
@@ -294,11 +370,21 @@ class Trainer:
                 "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             },
             "config": {
+                "tokenizer_sha256": getattr(self, "tokenizer_sha256", None),
+                "tokenizer": {
+                    "sha256": getattr(self, "tokenizer_sha256", None),
+                    "file_name": (
+                        Path(self.tokenizer_path).name
+                        if getattr(self, "tokenizer_path", None)
+                        else None
+                    ),
+                },
                 "model": {
                     "vocab_size": model.vocab_size,
                     "context_length": model.context_length,
                     "embed_dim": model.embed_dim,
                     "num_heads": model.num_heads,
+                    "num_kv_heads": model.num_kv_heads,
                     "num_layers": model.num_layers,
                     "ffn_dim": model.ffn_dim,
                     "dropout": model.dropout_rate,
@@ -309,6 +395,14 @@ class Trainer:
                     "ffn_type": model.ffn_type,
                     "rope_base": model.rope_base,
                     "rope_max_seq_len": model.rope_max_seq_len,
+                    "rope_scaling_factor": model.rope_scaling_factor,
+                    "fused_qkv": model.fused_qkv,
+                    "use_sdpa": model.use_sdpa,
+                    "qk_norm": model.qk_norm,
+                    "gradient_checkpointing": model.gradient_checkpointing,
+                    "context_adapter": model.context_adapter_config,
+                    "sliding_window": model.sliding_window,
+                    "global_attention_interval": model.global_attention_interval,
                 }
             }
         }
@@ -360,9 +454,16 @@ class Trainer:
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        saved_tokenizer = checkpoint.get("config", {}).get("tokenizer_sha256")
+        if (
+            saved_tokenizer
+            and self.tokenizer_sha256
+            and saved_tokenizer != self.tokenizer_sha256
+        ):
+            raise RuntimeError("checkpoint tokenizer fingerprint does not match this run")
 
-        model = self.model.module if hasattr(self.model, "module") else self.model
-        model.load_state_dict(checkpoint["model_state_dict"])
+        model = self._raw_model()
+        model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
@@ -370,6 +471,7 @@ class Trainer:
         self.step = checkpoint["step"]
         self.epoch = checkpoint["epoch"]
         self.best_val_loss = checkpoint["best_val_loss"]
+        self.tokens_seen = checkpoint.get("tokens_seen", 0)
         
         # Restore RNG states
         if "rng_state" in checkpoint:
@@ -395,7 +497,13 @@ class Trainer:
         if self.device.startswith('cuda'):
             print("Running CUDA warmup...")
             self.model.train()
-            dummy = torch.randint(0, self.model.vocab_size, (self.train_dataloader.batch_size, self.model.context_length), device=self.device)
+            raw_model = self._raw_model()
+            dummy = torch.randint(
+                0,
+                raw_model.vocab_size,
+                (self.train_dataloader.batch_size, raw_model.context_length),
+                device=self.device,
+            )
             with torch.amp.autocast('cuda', enabled=self.use_amp):
                 for _ in range(3):
                     _ = self.model(dummy)
@@ -405,38 +513,72 @@ class Trainer:
         self.model.train()
         running_loss = 0.0
         step_start_time = time.time()
-        tokens_per_step = self.train_dataloader.batch_size * self.model.context_length
+        interval_tokens = 0
+        interval_microbatches = 0
+        microbatches_since_update = 0
         
         print("[DEBUG] Entered training loop", flush=True)
         
         while self.step < self.max_steps:
                 self.epoch += 1
                 print(f"[DEBUG] Epoch {self.epoch} started", flush=True)
+                dataset = getattr(self.train_dataloader, "dataset", None)
+                if hasattr(dataset, "set_epoch"):
+                    dataset.set_epoch(self.epoch)
+                sampler = getattr(self.train_dataloader, "sampler", None)
+                if hasattr(sampler, "set_epoch"):
+                    sampler.set_epoch(self.epoch)
                 
                 for batch in self.train_dataloader:
                     if self.step >= self.max_steps:
                         break
 
-                    loss = self.train_step(batch)
+                    will_update = (
+                        microbatches_since_update + 1 == self.grad_accum_steps
+                    )
+                    sync_context = (
+                        self.model.no_sync()
+                        if getattr(self, "is_distributed", False)
+                        and hasattr(self.model, "no_sync")
+                        and not will_update
+                        else nullcontext()
+                    )
+                    with sync_context:
+                        loss = self.train_step(batch)
                     running_loss += loss
+                    batch_tokens = getattr(
+                        self,
+                        "last_batch_tokens",
+                        self.train_dataloader.batch_size * self._raw_model().context_length,
+                    )
+                    batch_tokens *= (
+                        dist.get_world_size()
+                        if getattr(self, "is_distributed", False)
+                        else 1
+                    )
+                    interval_tokens += batch_tokens
+                    self.tokens_seen = getattr(self, "tokens_seen", 0) + batch_tokens
+                    interval_microbatches += 1
+                    microbatches_since_update += 1
 
-                    # Optimizer step after accumulation
-                    if (self.step + 1) % self.grad_accum_steps == 0:
-                        self.optimizer_step()
+                    if not will_update:
+                        continue
 
-                    # self.step is the number of completed training batches.
+                    self.optimizer_step()
+                    microbatches_since_update = 0
+                    # A step is one optimizer update, independent of accumulation.
                     self.step += 1
 
                     # Logging
                     if self.step % self.log_interval == 0:
                         elapsed = time.time() - step_start_time
                         lr = self.optimizer.param_groups[0]["lr"]
-                        avg_loss = running_loss / self.log_interval
-                        tokens_per_sec = (self.log_interval * self.train_dataloader.batch_size * self.model.context_length) / elapsed
+                        avg_loss = running_loss / max(interval_microbatches, 1)
+                        tokens_per_sec = interval_tokens / elapsed
                         
                         print(
                             f"Step {self.step}/{self.max_steps} | "
-                            f"Loss: {running_loss / self.log_interval:.4f} | "
+                            f"Loss: {avg_loss:.4f} | "
                             f"LR: {lr:.2e} | "
                             f"Tok/s: {tokens_per_sec:.0f} | "
                             f"GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB | "
@@ -447,10 +589,22 @@ class Trainer:
                             self.writer.add_scalar("train/loss", avg_loss, self.step)
                             self.writer.add_scalar("train/lr", lr, self.step)
                             self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
+                            self.writer.add_scalar("train/tokens_seen", self.tokens_seen, self.step)
                             self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
                         
                         running_loss = 0.0
+                        interval_tokens = 0
+                        interval_microbatches = 0
                         step_start_time = time.time()
+
+                    generate_interval = getattr(self, "generate_interval", 0)
+                    if generate_interval > 0 and self.step % generate_interval == 0:
+                        if getattr(self, "is_distributed", False):
+                            dist.barrier()
+                        if getattr(self, "is_main_process", True):
+                            self.log_generated_sample(self.step, loss)
+                        if getattr(self, "is_distributed", False):
+                            dist.barrier()
                     
                     # Validation
                     if self.val_dataloader and self.step % self.eval_interval == 0:
@@ -477,8 +631,9 @@ class Trainer:
                 if self.step >= self.max_steps:
                     break
         
-        # Final checkpoint
-        self._save_checkpoint(is_best=False, force=True)
+        # The interval path already persisted this exact optimizer boundary.
+        if self.step % self.save_interval != 0:
+            self._save_checkpoint(is_best=False, force=True)
         print("Training complete!")
         
         if self.writer:

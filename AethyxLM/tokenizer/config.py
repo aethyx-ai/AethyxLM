@@ -15,6 +15,7 @@ CORPUS_FILE = DATA_DIR / "corpus.txt"
 
 # Output
 TOKENIZER_FILE = ROOT_DIR / "tokenizer.json"
+TOKENIZER_V2_FILE = ROOT_DIR / "tokenizer_v2.json"
 
 # Tokenizer settings
 VOCAB_SIZE = 32000
@@ -25,4 +26,14 @@ SPECIAL_TOKENS = [
     "<UNK>",
     "<BOS>",
     "<EOS>",
+]
+
+STRUCTURAL_TOKENS = [
+    "<DOC>",
+    "<SYSTEM>",
+    "<USER>",
+    "<ASSISTANT>",
+    "<TOOL>",
+    "<CONTEXT>",
+    "<MEMORY>",
 ]

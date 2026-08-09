@@ -78,9 +78,9 @@ def build_normalization(
     """
     if normalization == "layernorm":
         from model.layer_norm import LayerNorm
-        return LayerNorm(embed_dim=embed_dim, eps=1e-5)
+        return LayerNorm(embed_dim=embed_dim, eps=eps)
     elif normalization == "rmsnorm":
-        return RMSNorm(embed_dim=embed_dim, eps=1e-5)
+        return RMSNorm(embed_dim=embed_dim, eps=eps)
     else:
         raise ValueError(
             f"Unknown normalization type: {normalization}. "

@@ -1,0 +1,119 @@
+{
+  "format_version": 1,
+  "purpose": "bounded representative tokenizer-v2 research corpus",
+  "output": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\data\\multilingual_corpus.txt",
+  "bytes": 11991351,
+  "sha256": "410f0e9c92468c6d8f45e7e78c9408bda495464299f9b1a9e4c27e9a87f7d31f",
+  "seed": 42,
+  "bytes_per_language_target": 500000,
+  "language_varieties": 24,
+  "sources": {
+    "eng_Latn": {
+      "bytes": 491351,
+      "documents": 30,
+      "source": "D:\\CODING\\AETHYXLabs\\AethyxLM\\data\\train.txt"
+    },
+    "asm_Beng": {
+      "bytes": 500000,
+      "documents": 644
+    },
+    "ben_Beng": {
+      "bytes": 500000,
+      "documents": 622
+    },
+    "brx_Deva": {
+      "bytes": 500000,
+      "documents": 947
+    },
+    "doi_Deva": {
+      "bytes": 500000,
+      "documents": 2070
+    },
+    "gom_Deva": {
+      "bytes": 500000,
+      "documents": 1247
+    },
+    "guj_Gujr": {
+      "bytes": 500000,
+      "documents": 737
+    },
+    "hin_Deva": {
+      "bytes": 500000,
+      "documents": 624
+    },
+    "kan_Knda": {
+      "bytes": 500000,
+      "documents": 821
+    },
+    "kas_Arab": {
+      "bytes": 500000,
+      "documents": 2216
+    },
+    "mai_Deva": {
+      "bytes": 500000,
+      "documents": 1231
+    },
+    "mal_Mlym": {
+      "bytes": 500000,
+      "documents": 588
+    },
+    "mar_Deva": {
+      "bytes": 500000,
+      "documents": 700
+    },
+    "mni_Mtei": {
+      "bytes": 500000,
+      "documents": 2177
+    },
+    "npi_Deva": {
+      "bytes": 500000,
+      "documents": 827
+    },
+    "ory_Orya": {
+      "bytes": 500000,
+      "documents": 1501
+    },
+    "pan_Guru": {
+      "bytes": 500000,
+      "documents": 675
+    },
+    "san_Deva": {
+      "bytes": 500000,
+      "documents": 991
+    },
+    "snd_Deva": {
+      "bytes": 500000,
+      "documents": 705
+    },
+    "tam_Taml": {
+      "bytes": 500000,
+      "documents": 595
+    },
+    "tel_Telu": {
+      "bytes": 500000,
+      "documents": 704
+    },
+    "urd_Arab": {
+      "bytes": 500000,
+      "documents": 717
+    },
+    "khasi": {
+      "bytes": 500000,
+      "documents": 2408
+    },
+    "santhali": {
+      "bytes": 500000,
+      "documents": 908
+    }
+  },
+  "external_dataset": {
+    "name": "AI4Bharat/IndicCorpV2",
+    "url": "https://huggingface.co/datasets/ai4bharat/IndicCorpV2",
+    "license": "cc-by-4.0",
+    "mode": "streaming, bounded sample"
+  },
+  "limitations": [
+    "This is a tokenizer pilot corpus, not a statistically complete pretraining corpus.",
+    "Each external split is sampled from the start of its stream and is not a uniform sample of the full split."
+  ]
+}

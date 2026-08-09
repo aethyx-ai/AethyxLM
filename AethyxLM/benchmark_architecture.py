@@ -1,156 +1,160 @@
-"""
-Benchmark script to compare GPT-2 style vs Modern architecture.
-"""
+"""Benchmark classic and modern AethyxLM execution paths."""
 
-import sys
-sys.path.insert(0, 'D:/CODING/AETHYXLabs/AethyxLM')
-
+import argparse
 import json
 import time
+from contextlib import nullcontext
+from pathlib import Path
+
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
+
 from model.gpt import GPT
 from tokenizer.tokenizer import AethyxTokenizer
 
 
-def benchmark_model(config, name, device, num_steps=50, warmup=5):
-    """Benchmark a model configuration."""
+ROOT = Path(__file__).resolve().parent
+
+
+def synchronize(device):
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def timed(action, steps, device):
+    synchronize(device)
+    start = time.perf_counter()
+    for _ in range(steps):
+        action()
+    synchronize(device)
+    return (time.perf_counter() - start) / steps
+
+
+def benchmark_model(
+    config, name, device, steps=20, batch_size=4, seq_len=64, decode_tokens=16
+):
+    config = config.copy()
+    config["gradient_checkpointing"] = False
     model = GPT(config=config).to(device)
+    use_amp = device.type == "cuda"
+    amp_dtype = torch.float16
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+
+    def autocast():
+        return (
+            torch.autocast("cuda", dtype=amp_dtype)
+            if use_amp
+            else nullcontext()
+        )
+
+    def forward(input_ids):
+        with autocast():
+            return model(input_ids)
+    tokens = torch.randint(0, model.vocab_size, (batch_size, seq_len), device=device)
+    targets = torch.randint(0, model.vocab_size, tokens.shape, device=device)
+
     model.eval()
-    
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    # Create dummy input - use actual vocab size from tokenizer and correct seq_len
-    tokenizer = AethyxTokenizer()
-    actual_vocab = tokenizer.vocab_size
-    batch_size = 8
-    seq_len = 64  # Match model's context_length
-    x = torch.randint(0, actual_vocab, (batch_size, seq_len), device=device)
-    
-    # Warmup
     with torch.no_grad():
-        for _ in range(warmup):
-            _ = model(x)
-    
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    
-    # Benchmark forward pass
-    start = time.time()
-    with torch.no_grad():
-        for _ in range(num_steps):
-            _ = model(x)
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    forward_time = (time.time() - start) / num_steps * 1000  # ms
-    
-    # Benchmark forward + backward
+        for _ in range(3):
+            forward(tokens)
+        forward_seconds = timed(lambda: forward(tokens), steps, device)
+
+        prefix = tokens[:1]
+
+        def uncached_decode():
+            sequence = prefix
+            for _ in range(decode_tokens):
+                logits = forward(sequence[:, -model.context_length :])
+                sequence = torch.cat((sequence, logits[:, -1].argmax(-1, keepdim=True)), 1)
+
+        def cached_decode():
+            with autocast():
+                logits, cache = model(prefix, use_cache=True)
+            for _ in range(decode_tokens):
+                next_token = logits[:, -1].argmax(-1, keepdim=True)
+                with autocast():
+                    logits, cache = model(next_token, kv_cache=cache, use_cache=True)
+
+        uncached_seconds = timed(uncached_decode, max(2, steps // 4), device)
+        cached_seconds = timed(cached_decode, max(2, steps // 4), device)
+
     model.train()
-    tokenizer = AethyxTokenizer()
-    actual_vocab = tokenizer.vocab_size
-    seq_len = 64  # Match model's context_length
-    x_train = torch.randint(0, actual_vocab, (8, seq_len), device=device)
-    targets = torch.randint(0, actual_vocab, (8, seq_len), device=device)
-    criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-    
-    # Warmup
-    for _ in range(3):
-        optimizer.zero_grad()
-        out = model(torch.randint(0, actual_vocab, (8, seq_len), device=device))
-        loss = nn.functional.cross_entropy(out.view(-1, actual_vocab), targets.view(-1))
-        loss.backward()
-        optimizer.step()
-    
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    
-    start = time.time()
-    for _ in range(num_steps):
-        optimizer.zero_grad()
-        out = model(torch.randint(0, actual_vocab, (8, seq_len), device=device))
-        loss = nn.functional.cross_entropy(out.view(-1, actual_vocab), targets.view(-1))
-        loss.backward()
-        optimizer.step()
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    train_time = (time.time() - start) / num_steps * 1000  # ms
-    
-    # Memory
-    if device.type == 'cuda':
-        max_mem = torch.cuda.max_memory_allocated() / (1024**2)  # MB
-    else:
-        max_mem = 0
-    
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
+    def train_step():
+        optimizer.zero_grad(set_to_none=True)
+        with autocast():
+            logits = model(tokens)
+            loss = F.cross_entropy(logits.reshape(-1, model.vocab_size), targets.reshape(-1))
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+    for _ in range(2):
+        train_step()
+    train_seconds = timed(train_step, steps, device)
+    peak_memory = (
+        torch.cuda.max_memory_allocated(device) if device.type == "cuda" else 0
+    )
     return {
         "name": name,
-        "params": total_params,
-        "trainable_params": trainable_params,
-        "forward_ms": forward_time,
-        "train_ms": train_time,
-        "peak_mem_mb": max_mem,
-        "throughput_tokens_per_sec": (8 * seq_len * 1000) / train_time,
+        "compute_dtype": "float16" if use_amp else "float32",
+        "parameters": sum(parameter.numel() for parameter in model.parameters()),
+        "forward_ms": forward_seconds * 1000,
+        "train_step_ms": train_seconds * 1000,
+        "training_tokens_per_second": batch_size * seq_len / train_seconds,
+        "decode_tokens": decode_tokens,
+        "uncached_decode_ms": uncached_seconds * 1000,
+        "cached_decode_ms": cached_seconds * 1000,
+        "kv_cache_decode_speedup": uncached_seconds / cached_seconds,
+        "peak_memory_mb": peak_memory / 1024**2,
     }
 
 
+def load_model_config(path):
+    return json.loads(path.read_text(encoding="utf-8"))["model"]
+
+
 def main():
-    print("=" * 80)
-    print("AethyxLM Architecture Benchmark")
-    print("=" * 80)
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}")
-    
-    # Load configs
-    with open('D:/CODING/AETHYXLabs/AethyxLM/configs/train_config_kaggle.json', 'r') as f:
-        gpt2_config = json.load(f)
-    
-    with open('D:/CODING/AETHYXLabs/AethyxLM/configs/train_config_modern.json', 'r') as f:
-        modern_config = json.load(f)
-    
-    gpt2_config = gpt2_config['model']
-    modern_config = modern_config['model']
-    
-    # Override vocab_size to match actual tokenizer (1908)
-    gpt2_config['vocab_size'] = 1908
-    modern_config['vocab_size'] = 1908
-    
-    # GPT-2 style (current)
-    print("\n" + "=" * 80)
-    print("Benchmarking GPT-2 Style (LayerNorm + Learned PosEmb + GELU)")
-    print("=" * 80)
-    gpt2_results = benchmark_model(gpt2_config, "GPT-2 Style", torch.device('cpu'))
-    
-    # Modern (RMSNorm + RoPE + SwiGLU)
-    print("\n" + "=" * 80)
-    print("Benchmarking Modern (RMSNorm + RoPE + SwiGLU)")
-    print("=" * 80)
-    modern_results = benchmark_model(modern_config, "Modern", torch.device('cpu'))
-    
-    # Print comparison table
-    print("\n" + "=" * 80)
-    print("BENCHMARK RESULTS")
-    print("=" * 80)
-    print(f"{'Metric':<30} {'GPT-2 Style':<20} {'Modern':<20} {'Speedup':<15}")
-    print("-" * 80)
-    print(f"{'Parameters':<30} {gpt2_results['params']:,<20} {modern_results['params']:,<20} {modern_results['params']/gpt2_results['params']:.2f}x")
-    print(f"{'Trainable Params':<30} {gpt2_results['trainable_params']:,<20} {modern_results['trainable_params']:,<20} {modern_results['trainable_params']/gpt2_results['trainable_params']:.2f}x")
-    print(f"{'Forward Time (ms)':<30} {gpt2_results['forward_ms']:.2f}{'':<14} {modern_results['forward_ms']:.2f}{'':<14} {gpt2_results['forward_ms']/modern_results['forward_ms']:.2f}x")
-    print(f"{'Train Step (ms)':<30} {gpt2_results['train_ms']:.2f}{'':<14} {modern_results['train_ms']:.2f}{'':<14} {gpt2_results['train_ms']/modern_results['train_ms']:.2f}x")
-    print(f"{'Throughput (tok/s)':<30} {gpt2_results['throughput_tokens_per_sec']:,.0f}{'':<14} {modern_results['throughput_tokens_per_sec']:,.0f}{'':<14} {modern_results['throughput_tokens_per_sec']/gpt2_results['throughput_tokens_per_sec']:.2f}x")
-    if torch.cuda.is_available():
-        print(f"{'Peak Memory (MB)':<30} {gpt2_results['peak_mem_mb']:.0f}{'':<14} {modern_results['peak_mem_mb']:.0f}{'':<14} {modern_results['peak_mem_mb']/gpt2_results['peak_mem_mb']:.2f}x")
-    
-    print("\n" + "=" * 80)
-    print("CONCLUSION")
-    print("=" * 80)
-    speedup = gpt2_results['train_ms'] / modern_results['train_ms']
-    if speedup > 1:
-        print(f"Modern architecture is {speedup:.2f}x FASTER in training")
-    else:
-        print(f"Modern architecture is {1/speedup:.2f}x SLOWER in training")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--steps", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--seq-len", type=int, default=64)
+    parser.add_argument("--decode-tokens", type=int, default=16)
+    parser.add_argument("--device", choices=["cpu", "cuda"], default=None)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    tokenizer = AethyxTokenizer(ROOT / "tokenizer" / "tokenizer.json")
+
+    configs = {
+        "classic": load_model_config(ROOT / "configs" / "train_config_kaggle.json"),
+        "modern": load_model_config(ROOT / "configs" / "train_config_modern.json"),
+    }
+    for config in configs.values():
+        config["vocab_size"] = tokenizer.vocab_size
+        config["context_length"] = max(
+            config["context_length"], args.seq_len + args.decode_tokens
+        )
+
+    results = {
+        name: benchmark_model(
+            config,
+            name,
+            device,
+            args.steps,
+            args.batch_size,
+            args.seq_len,
+            args.decode_tokens,
+        )
+        for name, config in configs.items()
+    }
+    payload = {"device": str(device), "results": results}
+    print(json.dumps(payload, indent=2))
+    if args.output:
+        args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

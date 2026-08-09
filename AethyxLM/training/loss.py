@@ -15,10 +15,11 @@ class LanguageModelLoss(nn.Module):
     - targets: (batch, seq_len) - target tokens (shifted by 1)
     """
     
-    def __init__(self, ignore_index: int = -100):
+    def __init__(self, ignore_index: int = -100, z_loss_coefficient: float = 0.0):
         super().__init__()
         self.ignore_index = ignore_index
         self.criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)
+        self.z_loss_coefficient = z_loss_coefficient
     
     def forward(
         self,
@@ -37,8 +38,13 @@ class LanguageModelLoss(nn.Module):
         """
         # Flatten for CrossEntropyLoss: (batch * seq_len, vocab_size)
         batch_size, seq_len, vocab_size = logits.shape
-        logits = logits.view(batch_size * seq_len, vocab_size)
-        targets = targets.view(batch_size * seq_len)
+        logits = logits.reshape(batch_size * seq_len, vocab_size)
+        targets = targets.reshape(batch_size * seq_len)
         
         loss = self.criterion(logits, targets)
+        if self.z_loss_coefficient:
+            valid = targets != self.ignore_index
+            if valid.any():
+                log_z = torch.logsumexp(logits[valid].float(), dim=-1)
+                loss = loss + self.z_loss_coefficient * log_z.square().mean()
         return loss

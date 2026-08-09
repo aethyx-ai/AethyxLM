@@ -5,14 +5,19 @@
     "context_length": 128,
     "embed_dim": 256,
     "num_heads": 8,
+    "num_kv_heads": 2,
     "num_layers": 8,
-    "ffn_dim": 1024,
+    "ffn_dim": 704,
     "dropout": 0.1,
-    "use_bias": true,
+    "use_bias": false,
     "layer_norm_eps": 1e-5,
     "normalization": "rmsnorm",
     "position_encoding": "rope",
-    "ffn_type": "swiglu"
+    "ffn_type": "swiglu",
+    "fused_qkv": true,
+    "use_sdpa": true,
+    "qk_norm": false,
+    "gradient_checkpointing": true
   },
   "training": {
     "learning_rate": 3e-4,
@@ -25,9 +30,19 @@
     "min_lr_ratio": 0.1,
     "grad_accum_steps": 4,
     "use_amp": true,
+    "amp_dtype": "auto",
+    "fused_optimizer": true,
+    "z_loss_coefficient": 1e-4,
+    "context_schedule": [
+      {"step": 0, "context_length": 64},
+      {"step": 5000, "context_length": 128}
+    ],
+    "torch_compile": false,
+    "compile_mode": "default",
     "batch_size": 8,
     "num_workers": 0,
     "eval_interval": 1000,
+    "eval_batches": 100,
     "save_interval": 1000,
     "log_interval": 50,
     "generate_interval": 999999
@@ -60,6 +75,6 @@
   },
   "tokenizer": {
     "tokenizer_file": "tokenizer/tokenizer.json",
-    "vocab_size": 32000
+    "vocab_size": 1908
   }
 }

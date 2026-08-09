@@ -121,3 +121,33 @@ def test_training_loop_saves_completed_step_numbers(tmp_path):
     trainer.train()
 
     assert saves == [(2, False, False), (3, False, True)]
+
+
+def test_training_steps_count_optimizer_updates_with_accumulation(tmp_path):
+    trainer = Trainer.__new__(Trainer)
+    trainer.model = TrainingModelStub()
+    trainer.train_dataloader = TrainingBatches([None, None])
+    trainer.val_dataloader = None
+    trainer.device = "cpu"
+    trainer.max_steps = 3
+    trainer.warmup_steps = 0
+    trainer.grad_accum_steps = 2
+    trainer.use_amp = False
+    trainer.checkpoint_dir = tmp_path
+    trainer.log_interval = 100
+    trainer.eval_interval = 100
+    trainer.save_interval = 100
+    trainer.writer = None
+    trainer.step = 0
+    trainer.epoch = 0
+    microbatches = []
+    updates = []
+    trainer.train_step = lambda batch: microbatches.append(batch) or 1.0
+    trainer.optimizer_step = lambda: updates.append(True) or 0.0
+    trainer._save_checkpoint = lambda **_kwargs: None
+
+    trainer.train()
+
+    assert trainer.step == 3
+    assert len(microbatches) == 6
+    assert len(updates) == 3

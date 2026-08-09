@@ -124,7 +124,9 @@ class AethyxDataset(Dataset):
     and RAM usage stays constant regardless of dataset size.
     """
 
-    def __init__(self, text_path, context_length=128, seed: int = 42):
+    def __init__(
+        self, text_path, context_length=128, seed: int = 42, tokenizer_path=None
+    ):
         self.context_length = context_length
         text_path = Path(text_path)
 
@@ -132,37 +134,76 @@ class AethyxDataset(Dataset):
             raise FileNotFoundError(text_path)
 
         bin_path = text_path.with_suffix('.bin')
+        metadata_path = bin_path.with_suffix('.bin.meta.json')
+
+        selected_tokenizer = (
+            AethyxTokenizer(tokenizer_path) if tokenizer_path else AethyxTokenizer()
+        )
+        if bin_path.exists() and metadata_path.exists():
+            cache_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            cached_hash = cache_metadata.get("tokenizer_sha256")
+            if cached_hash and cached_hash != selected_tokenizer.sha256:
+                raise ValueError(
+                    f"Token cache {bin_path} was built with a different tokenizer; "
+                    "remove the .bin cache and rebuild it."
+                )
 
         if not bin_path.exists() or bin_path.stat().st_size == 0:
             # --- First-time tokenisation (streaming to avoid OOM) ---
             print(f"Tokenising {text_path} -> {bin_path} (streaming)...")
-            tokenizer = AethyxTokenizer()
+            tokenizer = selected_tokenizer
             CHUNK_SIZE = 10_000_000  # tokens per write
             total_tokens = 0
             with open(bin_path, 'wb') as f_out:
                 with text_path.open('r', encoding='utf-8') as f_in:
                     buffer = []
-                    for line in f_in:
-                        if not line.strip():
-                            continue
-                        ids = tokenizer.encode(line)
+                    document_lines = []
+
+                    def append_document(lines):
+                        if not lines:
+                            return
+                        ids = tokenizer.encode("\n".join(lines))
+                        if tokenizer.eos_id is not None:
+                            ids.append(tokenizer.eos_id)
                         buffer.extend(ids)
+
+                    for line in f_in:
+                        if line.strip():
+                            document_lines.append(line.rstrip("\n"))
+                        else:
+                            append_document(document_lines)
+                            document_lines = []
                         if len(buffer) >= CHUNK_SIZE:
                             arr = np.array(buffer[:CHUNK_SIZE], dtype=np.uint16)
                             arr.tofile(f_out)
                             total_tokens += len(arr)
                             buffer = buffer[CHUNK_SIZE:]
+                    append_document(document_lines)
                     if buffer:
                         arr = np.array(buffer, dtype=np.uint16)
                         arr.tofile(f_out)
                         total_tokens += len(arr)
             print(f"[OK] Saved {total_tokens:,} tokens to {bin_path}")
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "tokenizer_file": str(tokenizer.path),
+                        "tokenizer_sha256": tokenizer.sha256,
+                        "vocab_size": tokenizer.vocab_size,
+                        "tokens": total_tokens,
+                        "dtype": "uint16",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
 
         # --- Memory-map the .bin file ---
         self._data = np.memmap(bin_path, dtype=np.uint16, mode='r')
         print(f"[OK] mmap {bin_path}: {len(self._data):,} tokens")
 
         self.seed = seed
+        self.epoch = 0
         random.seed(seed)
 
     def __len__(self):
@@ -185,7 +226,9 @@ class MixedAethyxDataset(Dataset):
     Sampling is done according to configurable weights.
     """
 
-    def __init__(self, datasets_config: list, context_length=128, seed: int = 42):
+    def __init__(
+        self, datasets_config: list, context_length=128, seed: int = 42, tokenizer_path=None
+    ):
         """
         Args:
             datasets_config: List of dicts with keys:
@@ -197,6 +240,7 @@ class MixedAethyxDataset(Dataset):
         """
         self.context_length = context_length
         self.seed = seed
+        self.epoch = 0
         random.seed(seed)
         np.random.seed(seed)
 
@@ -209,16 +253,13 @@ class MixedAethyxDataset(Dataset):
         for config in datasets_config:
             weight = config.get('weight', 1.0)
             train_path = config['train']
-            val_path = config.get('val')
-
-            train_dataset = AethyxDataset(train_path, context_length=context_length)
+            train_dataset = AethyxDataset(
+                train_path,
+                context_length=context_length,
+                tokenizer_path=tokenizer_path,
+            )
             self.sub_datasets.append(train_dataset)
             self.weights.append(weight)
-
-            if val_path:
-                val_dataset = AethyxDataset(val_path, context_length=context_length)
-                self.sub_datasets.append(val_dataset)
-                self.weights.append(weight)
 
         # Normalize weights
         total_weight = sum(self.weights)
@@ -227,17 +268,23 @@ class MixedAethyxDataset(Dataset):
         # Calculate cumulative weights for sampling
         self.cumulative_weights = np.cumsum(self.weights)
 
-        # Total length (weighted sum of lengths)
-        self.total_length = sum(
-            len(ds) * w for ds, w in zip(self.sub_datasets, self.weights)
-        )
+        # One logical epoch covers the aggregate amount of source data. Weights
+        # control sampling frequency, not the declared epoch length.
+        self.total_length = sum(len(ds) for ds in self.sub_datasets)
+
+    def set_epoch(self, epoch: int):
+        self.epoch = int(epoch)
 
     def __len__(self):
         return int(self.total_length)
 
     def __getitem__(self, idx):
-        # Sample which dataset to use based on weights
-        r = np.random.random()
+        # Derive randomness from index and epoch so behavior is reproducible
+        # across worker counts and resume runs.
+        rng = np.random.default_rng(
+            np.random.SeedSequence([self.seed, self.epoch, int(idx)])
+        )
+        r = rng.random()
         dataset_idx = np.searchsorted(self.cumulative_weights, r)
         dataset = self.sub_datasets[dataset_idx]
 
@@ -248,8 +295,7 @@ class MixedAethyxDataset(Dataset):
             dataset = self.sub_datasets[0]
             dataset_len = len(dataset)
 
-        # Map idx to dataset index
-        local_idx = idx % dataset_len
+        local_idx = int(rng.integers(0, dataset_len))
         chunk = np.array(dataset._data[local_idx: local_idx + self.context_length + 1],
                          dtype=np.int64)
         x = torch.from_numpy(chunk[:-1])

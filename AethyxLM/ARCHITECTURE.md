@@ -1,5 +1,65 @@
 # AethyxLM Modern Transformer Architecture
 
+> The executable model and JSON configuration are authoritative. Historical
+> benchmark numbers later in this document predate the efficient-attention
+> upgrade and should not be used as current performance claims.
+
+## Current efficient baseline
+
+The modern configuration now uses RMSNorm, RoPE, correctly budgeted SwiGLU,
+grouped-query attention (8 query / 2 KV heads), fused QKV projection, PyTorch
+scaled-dot-product attention, bias-free projections, and RoPE-aware KV-cached
+decoding. Training supports gradient checkpointing, BF16-aware AMP, fused
+AdamW, optional z-loss, and a staged context-length curriculum.
+
+For longer-context experiments, layers can use a bounded sliding window with
+periodic full-attention layers. Sliding layers retain only their configured
+window in the KV cache while separately tracking absolute RoPE position. A
+linear RoPE scaling factor is available for controlled continued-pretraining
+experiments; accepting a longer tensor is not treated as proof of long-context
+retrieval quality.
+
+Legacy checkpoints remain compatible because models without the new config
+keys retain separate Q/K/V projections and one KV head per query head.
+
+## Compiled-context research boundary
+
+Context compression remains experimental and disabled by default. The optional
+`LatentContextAdapter` accepts typed features from any future local compiler
+(text, graph, visual, structured, or hybrid), resamples a variable number of
+items into a fixed latent budget, and exposes those latents to explicitly
+selected decoder layers through gated cross-attention.
+
+```text
+compiler features + type IDs + validity mask
+                    |
+                    v
+          fixed latent context budget
+                    |
+                    v
+       selected decoder cross-attention layers
+```
+
+The adapter does not claim that a representation is information-preserving.
+`evaluation/evaluator.py` reports reduction and downstream accuracy retention
+as separate metrics. Compression succeeds only when task performance remains
+within an agreed tolerance of the raw-context baseline.
+
+`ContextMemoryBank` adds deterministic query-aware local retrieval before the
+latent bottleneck. It preserves type IDs and source references, allowing a
+future compiler to retrieve exact raw material when compressed context is not
+sufficient. Retrieval, compression, and the decoder remain separate ablation
+boundaries.
+
+## Tokenizer generations
+
+The checked-in tokenizer remains available for existing checkpoints. New
+pretraining runs should create a versioned `tokenizer_v2.json`, which defaults
+to NFKC normalization without lowercasing or accent stripping and reserves
+document, role, tool, context, and memory tokens. A v2 tokenizer must be trained
+on a representative multilingual corpus before it replaces the legacy model's
+1,908-token vocabulary.
+
 ## Overview
 
 This document describes the modern transformer architecture upgrades implemented in AethyxLM, moving from a GPT-2 style architecture to a modern LLM architecture.
@@ -222,6 +282,36 @@ where SiLU(x) = x * sigmoid(x)
 ```
 
 ## References
+
+## Empirical pilot status (2026-08-09)
+
+These results are bounded engineering pilots, not frontier-model claims:
+
+- CUDA environment: PyTorch `2.11.0+cu130` on an NVIDIA GeForce MX450 (SM 7.5).
+  Memory-efficient SDPA and math execute successfully. This Windows wheel has no
+  FlashAttention kernel, and cuDNN attention does not support SM 7.5.
+- GPU execution benchmark: the modern path reached 3,770 training tokens/s and
+  1.10x cached-decoding speedup in the small 128-token test. Kernel-launch
+  overhead dominates at this scale; see `gpu_benchmark.json`.
+- Tokenizer v2: trained a 16K vocabulary on a bounded 24-variety English/Indic
+  sample. On the in-sample diagnostic it produced 274,362 tokens versus 545,599
+  for the legacy tokenizer, with zero unknown tokens and 100% normalized
+  round-trip. This is not a held-out language-quality estimate.
+- Scaling feasibility: 10.17M and 23.53M configurations completed equal 15,360
+  token CUDA pilots. The 76.98M and 272.54M configurations exceed the safe AdamW
+  capacity of the 2 GB GPU and were capacity-gated.
+- Matched-token architecture pilot: after 51,200 tokens, the 8.09M modern model
+  reached validation loss 4.894 versus 5.041 for the 6.84M classic model, while
+  running slower on this GPU. The differing parameter counts and short budget
+  prevent an intelligence conclusion.
+- Context compression: a synthetic exact-binding task rejected the current
+  generic latent resampler. At 70.3% unit reduction it achieved 7.83% exact
+  retrieval (random baseline 6.25%). Therefore the proposed 70% context reduction
+  remains unvalidated and requires key/address-preserving compiler structure.
+
+Reproducible artifacts are `sdpa_backend_probe.json`, `gpu_benchmark.json`,
+`tokenizer/tokenizer_v2_evaluation.json`, `scaling_pilot_gpu.json`,
+`architecture_quality_pilot_gpu.json`, and `context_compression_pilot.json`.
 
 - [RMSNorm](https://arxiv.org/abs/1910.07467) - Zhang & Sennrich, 2019
 - [RoPE](https://arxiv.org/abs/2104.09864) - Su et al., 2021

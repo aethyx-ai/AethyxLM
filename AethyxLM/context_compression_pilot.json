@@ -1,0 +1,79 @@
+{
+  "experiment": "synthetic exact key-value context retrieval",
+  "warning": "This isolates representation capacity on synthetic data. It does not validate natural-language, graph, image, privacy, or 70% product claims.",
+  "task": {
+    "records": 64,
+    "value_classes": 16
+  },
+  "representations": {
+    "raw_structured": {
+      "decoder": "oracle lookup upper bound",
+      "logical_units": 64,
+      "unit_reduction": 0.0,
+      "stored_scalars": 5120,
+      "exact_retrieval_accuracy": 1.0
+    },
+    "indexed_graph": {
+      "decoder": "oracle indexed-node lookup",
+      "logical_units": 64,
+      "unit_reduction": 0.0,
+      "stored_scalars": 1024,
+      "exact_retrieval_accuracy": 1.0,
+      "note": "Fixed key order removes explicit key one-hots but not node count."
+    },
+    "spatial_grid_patches": {
+      "decoder": "oracle fixed-grid lookup; no vision encoder tested",
+      "logical_units": 16,
+      "unit_reduction": 0.75,
+      "stored_scalars": 1024,
+      "exact_retrieval_accuracy": 1.0,
+      "note": "Packing four cells per unit cuts unit count, not scalar information."
+    },
+    "learned_latents": {
+      "64": {
+        "representation": "learned latent resampler",
+        "logical_units": 64,
+        "unit_reduction": 0.0,
+        "stored_scalars": 4096,
+        "exact_retrieval_accuracy": 0.07765625,
+        "accuracy_retention_vs_raw_oracle": 0.07765625,
+        "final_training_loss": 2.782552480697632,
+        "training_steps": 400,
+        "evaluation_examples": 6400
+      },
+      "32": {
+        "representation": "learned latent resampler",
+        "logical_units": 32,
+        "unit_reduction": 0.5,
+        "stored_scalars": 2048,
+        "exact_retrieval_accuracy": 0.08390625,
+        "accuracy_retention_vs_raw_oracle": 0.08390625,
+        "final_training_loss": 2.7740731239318848,
+        "training_steps": 400,
+        "evaluation_examples": 6400
+      },
+      "19": {
+        "representation": "learned latent resampler",
+        "logical_units": 19,
+        "unit_reduction": 0.703125,
+        "stored_scalars": 1216,
+        "exact_retrieval_accuracy": 0.07828125,
+        "accuracy_retention_vs_raw_oracle": 0.07828125,
+        "final_training_loss": 2.7694950103759766,
+        "training_steps": 400,
+        "evaluation_examples": 6400
+      },
+      "8": {
+        "representation": "learned latent resampler",
+        "logical_units": 8,
+        "unit_reduction": 0.875,
+        "stored_scalars": 512,
+        "exact_retrieval_accuracy": 0.08484375,
+        "accuracy_retention_vs_raw_oracle": 0.08484375,
+        "final_training_loss": 2.7602977752685547,
+        "training_steps": 400,
+        "evaluation_examples": 6400
+      }
+    }
+  }
+}

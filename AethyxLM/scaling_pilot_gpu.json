@@ -1,0 +1,65 @@
+{
+  "experiment": "short controlled scaling pilot",
+  "warning": "Short equal-token runs validate feasibility and learning behavior, not frontier intelligence or a scaling law.",
+  "device": "NVIDIA GeForce MX450",
+  "torch": "2.11.0+cu130",
+  "settings": {
+    "train_data": "data/train.bin",
+    "validation_data": "data/val.bin",
+    "vocab_size": 1908,
+    "context_length": 128,
+    "batch_size": 1,
+    "grad_accumulation": 4,
+    "steps": 30,
+    "eval_batches": 8,
+    "learning_rate": 0.0003,
+    "max_vram_fraction": 0.82,
+    "models": "10m,30m,100m,300m",
+    "seed": 42,
+    "output": "scaling_pilot_gpu.json"
+  },
+  "runs": {
+    "10m": {
+      "status": "completed",
+      "parameters": 10174848,
+      "initial_validation_loss": 7.671966552734375,
+      "final_validation_loss": 5.7915191650390625,
+      "validation_perplexity": 327.51018867161383,
+      "mean_training_loss": 6.319520060221354,
+      "last_training_loss": 5.7177734375,
+      "optimizer_steps": 30,
+      "trained_tokens": 15360,
+      "tokens_per_second": 2497.4373626545544,
+      "elapsed_seconds": 6.150304399896413,
+      "peak_vram_bytes": 254193152,
+      "amp_dtype": "torch.bfloat16"
+    },
+    "30m": {
+      "status": "completed",
+      "parameters": 23529984,
+      "initial_validation_loss": 7.6302490234375,
+      "final_validation_loss": 5.7140350341796875,
+      "validation_perplexity": 303.0915891268393,
+      "mean_training_loss": 6.186442565917969,
+      "last_training_loss": 5.7352752685546875,
+      "optimizer_steps": 30,
+      "trained_tokens": 15360,
+      "tokens_per_second": 1060.6279812403284,
+      "elapsed_seconds": 14.481986400205642,
+      "peak_vram_bytes": 527192576,
+      "amp_dtype": "torch.bfloat16"
+    },
+    "100m": {
+      "status": "skipped_capacity_gate",
+      "parameters": 76982016,
+      "estimated_training_bytes": 1500147712,
+      "free_device_bytes": 1315349915
+    },
+    "300m": {
+      "status": "skipped_capacity_gate",
+      "parameters": 272536576,
+      "estimated_training_bytes": 4629020672,
+      "free_device_bytes": 1315349915
+    }
+  }
+}

@@ -20,6 +20,7 @@ CONTEXT_LENGTH = 128
 
 EMBED_DIM = 256
 NUM_HEADS = 8
+NUM_KV_HEADS = NUM_HEADS
 
 assert EMBED_DIM % NUM_HEADS == 0, (
     "EMBED_DIM must be divisible by NUM_HEADS."
@@ -37,6 +38,9 @@ DROPOUT = 0.1
 FFN_DIM = EMBED_DIM * 4
 
 USE_BIAS = True
+FUSED_QKV = False
+USE_SDPA = True
+QK_NORM = False
 
 # LayerNorm
 LAYER_NORM_EPS = 1e-5

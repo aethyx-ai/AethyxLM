@@ -1,0 +1,51 @@
+{
+  "vocab_size": 16000,
+  "requested_vocab_size": 16000,
+  "format_version": 2,
+  "tokenizer_type": "BPE",
+  "special_tokens": [
+    "<PAD>",
+    "<UNK>",
+    "<BOS>",
+    "<EOS>",
+    "<DOC>",
+    "<SYSTEM>",
+    "<USER>",
+    "<ASSISTANT>",
+    "<TOOL>",
+    "<CONTEXT>",
+    "<MEMORY>"
+  ],
+  "normalizer": {
+    "type": "NFKC",
+    "preserves_case_and_accents": true
+  },
+  "pre_tokenizer": {
+    "type": "ByteLevel",
+    "add_prefix_space": false
+  },
+  "decoder": {
+    "type": "ByteLevel"
+  },
+  "trainer": {
+    "type": "BpeTrainer",
+    "vocab_size": 16000,
+    "min_frequency": 2,
+    "special_tokens": [
+      "<PAD>",
+      "<UNK>",
+      "<BOS>",
+      "<EOS>",
+      "<DOC>",
+      "<SYSTEM>",
+      "<USER>",
+      "<ASSISTANT>",
+      "<TOOL>",
+      "<CONTEXT>",
+      "<MEMORY>"
+    ]
+  },
+  "timestamp": "2026-08-09 22:37:43",
+  "dataset_used": "tokenizer\\data\\multilingual_corpus.txt",
+  "corpus_size_bytes": 11991351
+}

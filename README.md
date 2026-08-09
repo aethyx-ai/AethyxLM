@@ -47,6 +47,20 @@ Beyond scaling model capability, we're researching new approaches to make large 
 - Token Sampling
 - Temperature Control
 - Top-k Sampling
+- Grouped-query attention and KV-cached decoding
+- Scaled-dot-product attention with optimized GPU kernel dispatch
+
+### Experimental Context Interface
+
+- Opt-in typed context adapter with a fixed latent budget
+- Selected-layer gated cross-attention
+- Representation-agnostic boundary for future local context compilers
+- Compression metrics coupled to downstream accuracy retention
+- Query-aware local retrieval with exact-source references
+- Optional sliding-window/global-layer long-context experiments
+
+This interface is research infrastructure, not a validated context-compression
+capability. The target compression ratio remains an experimental hypothesis.
 
 ---
 

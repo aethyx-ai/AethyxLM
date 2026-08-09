@@ -1,0 +1,31 @@
+{
+  "device": "cuda",
+  "results": {
+    "classic": {
+      "name": "classic",
+      "compute_dtype": "float16",
+      "parameters": 1070336,
+      "forward_ms": 5.4106200113892555,
+      "train_step_ms": 37.21059998497367,
+      "training_tokens_per_second": 6879.760071145791,
+      "decode_tokens": 128,
+      "uncached_decode_ms": 827.9527998529375,
+      "cached_decode_ms": 894.9674498289824,
+      "kv_cache_decode_speedup": 0.9251205728332906,
+      "peak_memory_mb": 45.45458984375
+    },
+    "modern": {
+      "name": "modern",
+      "compute_dtype": "float16",
+      "parameters": 6128896,
+      "forward_ms": 21.163959987461567,
+      "train_step_ms": 67.90992002934217,
+      "training_tokens_per_second": 3769.699623992913,
+      "decode_tokens": 128,
+      "uncached_decode_ms": 2134.816899895668,
+      "cached_decode_ms": 1938.96279996261,
+      "kv_cache_decode_speedup": 1.1010097253731916,
+      "peak_memory_mb": 154.0009765625
+    }
+  }
+}

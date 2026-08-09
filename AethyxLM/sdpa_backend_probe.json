@@ -1,0 +1,24 @@
+{
+  "torch": "2.11.0+cu130",
+  "device": "NVIDIA GeForce MX450",
+  "compute_capability": [
+    7,
+    5
+  ],
+  "backends": {
+    "flash_attention": {
+      "available": false,
+      "reason": "No available kernel. Aborting execution."
+    },
+    "efficient_attention": {
+      "available": true
+    },
+    "cudnn_attention": {
+      "available": false,
+      "reason": "No available kernel. Aborting execution."
+    },
+    "math": {
+      "available": true
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "vocab_size": 32000,
+  "vocab_size": 1908,
   "tokenizer_type": "BPE",
   "special_tokens": [
     "<PAD>",
