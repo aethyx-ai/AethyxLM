@@ -1,155 +1,145 @@
 # AethyxLM
 
-> Building the next generation of frontier AI systems from India.
+> Building efficient frontier AI systems from India.
 
-AethyxLM is a decoder-only Large Language Model built completely from scratch in **PyTorch** by **Aethyx AI**.
+AethyxLM is a decoder-only language model and training stack built from scratch in PyTorch by Aethyx AI. The project currently focuses on a stable multilingual pretraining pipeline while separately researching more information-dense ways for transformers to consume context.
 
-Unlike projects that rely heavily on existing implementations, AethyxLM is being engineered from the ground up to understand, improve, and eventually redefine modern language model architectures.
+## Current production profile
 
----
+- 31,171,968 parameters
+- 32,000-token multilingual ByteLevel BPE tokenizer
+- 12 transformer layers, 384-dimensional embeddings
+- 6 query heads and 2 key/value heads using grouped-query attention (GQA)
+- RoPE, RMSNorm, SwiGLU, fused QKV projections and QK normalization
+- PyTorch scaled-dot-product attention (SDPA)
+- Gradient checkpointing, mixed precision and fused AdamW when supported
+- Sequence-length curriculum: 128, then 256, then 512 tokens
+- KV-cached generation and optional sliding-window/global attention experiments
 
-## 🎯 Vision
+The active configuration is [`AethyxLM/configs/train_config_modern.json`](AethyxLM/configs/train_config_modern.json).
 
-Our long-term mission is to build globally competitive **frontier AI models** originating from India.
+## Training data
 
-We're not building another AI wrapper or chatbot—we're building the foundation itself.
+The active storage-bounded mixture contains approximately 526 million tokenized tokens across 15 datasets:
 
-Beyond scaling model capability, we're researching new approaches to make large language models significantly more efficient, particularly in how they process and utilize context.
+- TinyStories
+- FineWeb-Edu
+- OpenWebMath
+- Cosmopedia OpenStax
+- Cosmopedia Khan Academy
+- IndicCorp v2 data for Hindi, Bengali, Telugu, Tamil, Marathi, Gujarati, Kannada, Malayalam, Punjabi and Urdu
 
----
+Remote datasets are streamed and tokenized directly into capped binary files, avoiding full dataset downloads. Each dataset has independent preparation state, validation data and tokenizer-fingerprint metadata. Source revisions are pinned for reproducibility.
 
-## 🚀 Current Progress
+Legacy pre-32K tokenizer artifacts and checkpoints are isolated under [`AethyxLM/archive/legacy_pre_32k`](AethyxLM/archive/legacy_pre_32k).
 
-### ✅ Core Architecture
+## Quick start
 
-- Custom GPT-style Decoder Architecture
-- Multi-Head Causal Self-Attention
-- Custom LayerNorm
-- Feed Forward Network (GELU)
-- Learned Token & Positional Embeddings
-- Pre-LayerNorm Transformer Blocks
-- Language Modeling Head
+Install dependencies:
 
-### ✅ Training Infrastructure
+```powershell
+cd AethyxLM
+python -m pip install -r requirements.txt
+```
 
-- Cross-Entropy Language Modeling Loss
-- AdamW Optimizer
-- Cosine Learning Rate Scheduler with Warmup
-- Mixed Precision (AMP)
-- Gradient Clipping
-- Gradient Accumulation
-- Checkpoint Save & Resume
-- Modular Training Pipeline
-- Storage-capped streaming dataset preparation with direct-to-binary tokenization
-- Independent resume state and tokenizer fingerprints for every dataset source
-- Production 32K multilingual tokenizer and 31.17M-parameter training profile
-- Balanced English plus ten-language Indic training mixture
+Verify that the tokenizer, binary datasets, metadata and model configuration agree:
 
-### ✅ Inference
+```powershell
+python scripts/check_training_readiness.py
+```
 
-- Local Chat Interface
-- Token Sampling
-- Temperature Control
-- Top-k Sampling
-- Grouped-query attention and KV-cached decoding
-- Scaled-dot-product attention with optimized GPU kernel dispatch
+Start production training on CUDA:
 
-### Experimental Context Interface
+```powershell
+python train.py --config configs/train_config_modern.json --device cuda
+```
 
-- Opt-in typed context adapter with a fixed latent budget
-- Selected-layer gated cross-attention
-- Representation-agnostic boundary for future local context compilers
-- Compression metrics coupled to downstream accuracy retention
-- Query-aware local retrieval with exact-source references
-- Optional sliding-window/global-layer long-context experiments
+The default run performs 100,000 optimizer steps. On a 6 GB RTX 3050 Laptop GPU, the initial estimate is roughly 10-20 hours, but actual throughput depends on GPU power limits and thermal throttling.
 
-This interface is research infrastructure, not a validated context-compression
-capability. The target compression ratio remains an experimental hypothesis.
+## Checkpoints and resume
 
----
+Training saves a complete resumable checkpoint every 1,000 optimizer steps. A checkpoint includes the model, optimizer, learning-rate scheduler, AMP scaler, training progress, token count and random-number-generator states.
 
-## 🛣️ Roadmap
+Resume from the latest checkpoint with:
 
-### Phase 1 — Foundation
-- [x] Project Setup
-- [x] GPT Decoder Architecture
-- [x] Training Infrastructure
-- [x] Inference Pipeline
-- [ ] Complete TinyStories Pretraining
+```powershell
+python train.py --config configs/train_config_modern.json --device cuda --resume checkpoints/checkpoint_latest.pt
+```
 
-### Phase 2 — Scaling
-- [ ] Larger Models
-- [ ] Distributed Training
-- [ ] Advanced Evaluation
-- [ ] Long Context Support
-- [ ] Efficient Inference
+The checkpoint directory retains:
 
-### Phase 3 — Research
-- [ ] Novel Context Compression
-- [ ] Persistent AI Memory
-- [ ] Advanced Reasoning
-- [ ] Multimodal Capabilities
-- [ ] Frontier-Scale Models
+- `checkpoint_latest.pt`
+- `checkpoint_best.pt` after validation improves
+- The three most recent numbered step checkpoints
 
----
+An interruption between save boundaries can lose up to 999 optimizer steps.
 
-## 💡 Research Direction
+## Preparing the storage-bounded dataset bundle
 
-One of AethyxLM's primary research directions is improving **context efficiency**.
+The prepared binaries can be copied to another training machine; the tokenizer does not need to be retrained. To recreate or extend the bundle when needed:
 
-Current transformer models repeatedly process large amounts of text—system prompts, conversation history, retrieved documents, and tool definitions—resulting in significant computational overhead.
+```powershell
+python scripts/prepare_dataset_bundle.py --bundle multilingual_v2_32k
+```
 
-We're exploring methods to represent large contexts in more compact forms with the goal of reducing effective context costs while preserving useful information.
+For training on another device, copy the project code, `AethyxLM/tokenizer`, `AethyxLM/configs`, and the active `.bin` plus `.bin.meta.json` files in `AethyxLM/data`. Copy `AethyxLM/checkpoints` as well when resuming an existing run.
 
----
+## Context-efficiency research
 
-## 🛠️ Tech Stack
+AethyxLM's intended long-term differentiation is a context compilation layer between user information and the transformer:
 
-- Python
-- PyTorch
-- CUDA
-- Git & GitHub
+```text
+Text, tools, documents and agent state
+                |
+       Local context compiler
+                |
+ Compact machine-readable representation
+                |
+             AethyxLM
+```
 
----
+The research question is not whether images are inherently better than tokens. It is which representation—text, graphs, spatial or visual layouts, learned latents, or a hybrid—preserves the same useful information with less bandwidth, memory and inference compute.
 
-## 📂 Project Structure
+The codebase includes an opt-in, representation-agnostic context adapter and benchmarking infrastructure. Context compression is not yet a validated product capability, and the proposed reduction of up to 70% remains a hypothesis that must be tested against task accuracy, retrieval, tool use, latency, memory, bandwidth and cost.
+
+This research remains isolated from the stable language-model training pipeline.
+
+## Project structure
 
 ```text
 AethyxLM/
-├── model/
-├── training/
-├── data/
-├── tokenizer/
-├── utils/
-├── checkpoints/
-├── train.py
-└── chat.py
+|-- model/          Transformer architecture
+|-- training/       Trainer, optimizer and scheduling logic
+|-- tokenizer/      Active 32K tokenizer and metadata
+|-- data/           Tokenized training/validation binaries
+|-- dataset/        Dataset loading and mixing
+|-- evaluation/     Model and compression evaluation
+|-- configs/        Production model and dataset configurations
+|-- scripts/        Dataset preparation and readiness tools
+|-- checkpoints/    Active resumable training checkpoints
+|-- archive/        Legacy artifacts kept out of the active path
+|-- train.py        Training entry point
+`-- chat.py         Local inference interface
 ```
 
----
+More architectural detail is available in [`AethyxLM/ARCHITECTURE.md`](AethyxLM/ARCHITECTURE.md).
 
-## 📈 Project Status
+## Status and roadmap
 
-AethyxLM is currently in active development.
+Completed foundations include the custom tokenizer, modern decoder architecture, mixed-dataset pipeline, storage-capped streaming preparation, checkpoint/resume support and CUDA smoke testing.
 
-The model architecture, training infrastructure, and inference pipeline have been built and validated. Our current focus is scaling training, advancing research, and developing more efficient transformer architectures.
+Current priorities are:
 
----
+1. Train and evaluate the 31M multilingual baseline.
+2. Run controlled scaling experiments.
+3. Improve long-context efficiency and retrieval.
+4. Benchmark graph, visual, latent and hybrid context representations.
+5. Scale only when experiments justify the added compute.
 
-## 🤝 Contributing
+## Contributing
 
-Contributions, discussions, and research collaborations are always welcome.
+Research discussions and contributions around efficient transformers, multilingual training, evaluation and context representation are welcome through GitHub issues and discussions.
 
-If you're interested in working on efficient transformers, training systems, or frontier AI research, feel free to open an issue or start a discussion.
-
----
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
-
----
-
-<p align="center">
-Building the future of AI — one layer at a time.
-</p>
