@@ -133,7 +133,7 @@ class BinaryTokenWriter:
 
 
 class FineWebPreparer:
-    """Coordinate streaming, tokenization, splitting, and durable writes."""
+    """Coordinate bounded streaming, tokenization, and durable binary writes."""
 
     def __init__(
         self,
@@ -147,6 +147,13 @@ class FineWebPreparer:
         buffer_tokens: int,
         progress_seconds: float,
         dedup_window: int,
+        dataset_name: str = DATASET_NAME,
+        dataset_config: Optional[str] = DATASET_CONFIG,
+        source_split: str = "train",
+        text_field: str = "text",
+        output_prefix: str = "fineweb",
+        overwrite: bool = False,
+        source_revision: Optional[str] = None,
     ) -> None:
         if target_gb is None and target_documents is None:
             raise ValueError("Either target_gb or target_documents is required")
@@ -160,6 +167,10 @@ class FineWebPreparer:
             raise ValueError("resume_from must be non-negative")
         if dedup_window < 0:
             raise ValueError("dedup_window must be non-negative")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", output_prefix):
+            raise ValueError("output_prefix may contain only letters, numbers, _ and -")
+        if not dataset_name or not source_split or not text_field:
+            raise ValueError("dataset_name, source_split, and text_field are required")
 
         self.target_gb = target_gb
         self.target_documents = target_documents
@@ -179,6 +190,12 @@ class FineWebPreparer:
             else None
         )
         self.val_split = val_split
+        self.dataset_name = dataset_name
+        self.dataset_config = dataset_config
+        self.source_split = source_split
+        self.text_field = text_field
+        self.output_prefix = output_prefix
+        self.source_revision = source_revision
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.tokenizer_path = Path(tokenizer_path)
@@ -189,10 +206,21 @@ class FineWebPreparer:
                 f"Vocabulary size {self.tokenizer.vocab_size:,} does not fit uint16"
             )
 
-        self.train_path = self.output_dir / "fineweb_train.bin"
-        self.val_path = self.output_dir / "fineweb_val.bin"
-        self.state_path = self.output_dir / "fineweb_state.json"
-        self.metadata_path = self.output_dir / "fineweb_metadata.json"
+        self.train_path = self.output_dir / f"{output_prefix}_train.bin"
+        self.val_path = self.output_dir / f"{output_prefix}_val.bin"
+        self.state_path = self.output_dir / f"{output_prefix}_state.json"
+        self.metadata_path = self.output_dir / f"{output_prefix}_metadata.json"
+        if not resume and not overwrite:
+            existing = [
+                path for path in (self.train_path, self.val_path, self.state_path)
+                if path.exists()
+            ]
+            if existing:
+                names = ", ".join(str(path) for path in existing)
+                raise FileExistsError(
+                    f"Output already exists: {names}. Use --resume for an interrupted "
+                    "run, select another --output-prefix, or explicitly use --overwrite."
+                )
         self.resume = resume
         self.resume_from = resume_from
         self.buffer_tokens = buffer_tokens
@@ -219,14 +247,27 @@ class FineWebPreparer:
 
     def stream_documents(self) -> Iterator[Dict[str, object]]:
         """Yield documents from Hugging Face without materializing the dataset."""
-        dataset = load_dataset(
-            DATASET_NAME,
-            DATASET_CONFIG,
-            split="train",
-            streaming=True,
-            columns=["text"],
-            batch_size=STREAM_BATCH_SIZE,
-        )
+        load_args = [self.dataset_name]
+        if self.dataset_config is not None:
+            load_args.append(self.dataset_config)
+        common = {
+            "split": self.source_split,
+            "streaming": True,
+            "revision": self.source_revision,
+        }
+        try:
+            dataset = load_dataset(
+                *load_args,
+                **common,
+                columns=[self.text_field],
+                batch_size=STREAM_BATCH_SIZE,
+            )
+        except ValueError as error:
+            # Plain-text builders such as IndicCorpV2 do not expose the
+            # Parquet-specific projection/batch settings.
+            if "doesn't have a 'columns' key" not in str(error):
+                raise
+            dataset = load_dataset(*load_args, **common)
         if self.stream_offset:
             print(f"Skipping {self.stream_offset:,} streamed documents for resume...")
             dataset = dataset.skip(self.stream_offset)
@@ -259,7 +300,7 @@ class FineWebPreparer:
         self, document: Dict[str, object]
     ) -> Tuple[Optional[List[int]], Optional[bytes], bool]:
         """Clean and tokenize one document; no token data survives the iteration."""
-        raw_text = document.get("text")
+        raw_text = document.get(self.text_field)
         if not isinstance(raw_text, str):
             return None, None, False
 
@@ -391,9 +432,14 @@ class FineWebPreparer:
         train_size = self.train_path.stat().st_size
         val_size = self.val_path.stat().st_size
         metadata = {
-            "dataset": DATASET_NAME,
-            "dataset_config": DATASET_CONFIG,
+            "dataset": self.dataset_name,
+            "dataset_config": self.dataset_config,
+            "source_split": self.source_split,
+            "text_field": self.text_field,
+            "output_prefix": self.output_prefix,
+            "source_revision": self.source_revision,
             "tokenizer": str(self.tokenizer_path),
+            "tokenizer_sha256": self.tokenizer_sha256,
             "vocabulary_size": self.tokenizer.vocab_size,
             "token_dtype": "uint16",
             "total_documents": self.stats.processed_documents,
@@ -416,6 +462,25 @@ class FineWebPreparer:
             "status": status,
         }
         atomic_write_json(self.metadata_path, metadata)
+        for path, tokens, split_name in (
+            (self.train_path, self.stats.train_tokens, "train"),
+            (self.val_path, self.stats.val_tokens, "validation"),
+        ):
+            atomic_write_json(
+                path.with_suffix(".bin.meta.json"),
+                {
+                    "tokenizer_file": str(self.tokenizer.path),
+                    "tokenizer_sha256": self.tokenizer_sha256,
+                    "vocab_size": self.tokenizer.vocab_size,
+                    "tokens": tokens,
+                    "dtype": "uint16",
+                    "dataset": self.dataset_name,
+                    "dataset_config": self.dataset_config,
+                    "source_split": self.source_split,
+                    "source_revision": self.source_revision,
+                    "binary_split": split_name,
+                },
+            )
 
     def _load_resume_state(self) -> None:
         if not self.state_path.exists():
@@ -433,8 +498,8 @@ class FineWebPreparer:
                 "truncate the final document, so only interrupted/error runs can resume."
             )
         expected_config = {
-            "dataset": DATASET_NAME,
-            "dataset_config": DATASET_CONFIG,
+            "dataset": self.dataset_name,
+            "dataset_config": self.dataset_config,
             "tokenizer_sha256": self.tokenizer_sha256,
             "vocabulary_size": self.tokenizer.vocab_size,
             "validation_split": self.val_split,
@@ -446,6 +511,18 @@ class FineWebPreparer:
                 raise ValueError(
                     f"Resume setting mismatch for {key}: "
                     f"checkpoint={state.get(key)!r}, requested={expected!r}"
+                )
+        optional_source_config = {
+            "source_split": self.source_split,
+            "text_field": self.text_field,
+            "output_prefix": self.output_prefix,
+            "source_revision": self.source_revision,
+        }
+        for key, expected in optional_source_config.items():
+            if key in state and state[key] != expected:
+                raise ValueError(
+                    f"Resume setting mismatch for {key}: "
+                    f"checkpoint={state[key]!r}, requested={expected!r}"
                 )
 
         self.stats = PrepStats(**state["stats"])
@@ -488,8 +565,12 @@ class FineWebPreparer:
             raise RuntimeError("Refusing to checkpoint while tokens are still buffered")
         state = {
             "version": STATE_VERSION,
-            "dataset": DATASET_NAME,
-            "dataset_config": DATASET_CONFIG,
+            "dataset": self.dataset_name,
+            "dataset_config": self.dataset_config,
+            "source_split": self.source_split,
+            "text_field": self.text_field,
+            "output_prefix": self.output_prefix,
+            "source_revision": self.source_revision,
             "tokenizer_sha256": self.tokenizer_sha256,
             "vocabulary_size": self.tokenizer.vocab_size,
             "validation_split": self.val_split,
@@ -602,7 +683,10 @@ class FineWebPreparer:
             else f"{self.target_documents:,} accepted documents"
         )
         print("=" * 72)
-        print("FineWeb-Edu streaming preparation")
+        print("Storage-bounded streaming dataset preparation")
+        print(f"Dataset         : {self.dataset_name}")
+        print(f"Configuration   : {self.dataset_config or '(default)'}")
+        print(f"Source split    : {self.source_split} / field {self.text_field}")
         print(f"Target          : {target}")
         print(f"Validation split: {self.val_split:.2%}")
         print(f"Buffer per split: {self.buffer_tokens:,} tokens")
@@ -703,7 +787,7 @@ def format_duration(seconds: float) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Stream FineWeb-Edu into uint16 binary training files"
+        description="Stream a Hugging Face text dataset into capped uint16 files"
     )
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--target-gb", type=float, help="Combined output size in GiB")
@@ -712,6 +796,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--val-split", type=float, default=0.01)
     parser.add_argument("--output-dir", default="data")
+    parser.add_argument("--dataset-name", default=DATASET_NAME)
+    parser.add_argument(
+        "--dataset-config",
+        default=DATASET_CONFIG,
+        help="Dataset configuration/subset; pass 'none' for the default subset",
+    )
+    parser.add_argument("--source-split", default="train")
+    parser.add_argument("--source-revision")
+    parser.add_argument("--text-field", default="text")
+    parser.add_argument("--output-prefix", default="fineweb")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing output prefix (never implied by a fresh run)",
+    )
     parser.add_argument("--tokenizer", default="tokenizer/tokenizer.json")
     parser.add_argument(
         "--resume", action="store_true", help="Append from the durable state checkpoint"
@@ -732,6 +831,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.resume and args.resume_from is not None:
         parser.error("--resume and --resume-from cannot be used together")
+    if args.dataset_config.lower() in {"none", "null", "default"}:
+        args.dataset_config = None
     return args
 
 
@@ -748,6 +849,13 @@ def main() -> None:
         buffer_tokens=args.buffer_tokens,
         progress_seconds=args.progress_seconds,
         dedup_window=args.dedup_window,
+        dataset_name=args.dataset_name,
+        dataset_config=args.dataset_config,
+        source_split=args.source_split,
+        text_field=args.text_field,
+        output_prefix=args.output_prefix,
+        overwrite=args.overwrite,
+        source_revision=args.source_revision,
     )
     preparer.run()
 

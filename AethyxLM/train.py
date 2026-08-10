@@ -204,6 +204,13 @@ def main():
     model_config = config['model']
     train_config = config['training']
     data_config = config['data']
+    if 'datasets_file' in data_config:
+        registry_path = resolve_project_path(data_config['datasets_file'])
+        registry = load_config(registry_path)
+        data_config['datasets'] = [
+            {"name": name, **dataset_config}
+            for name, dataset_config in registry.items()
+        ]
     checkpoint_config = config['checkpoint']
     tokenizer_config = config.get('tokenizer', {})
     tokenizer_path = resolve_project_path(

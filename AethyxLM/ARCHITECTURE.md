@@ -53,12 +53,11 @@ boundaries.
 
 ## Tokenizer generations
 
-The checked-in tokenizer remains available for existing checkpoints. New
-pretraining runs should create a versioned `tokenizer_v2.json`, which defaults
-to NFKC normalization without lowercasing or accent stripping and reserves
-document, role, tool, context, and memory tokens. A v2 tokenizer must be trained
-on a representative multilingual corpus before it replaces the legacy model's
-1,908-token vocabulary.
+The production `tokenizer/tokenizer.json` is tokenizer v2: a 32K ByteLevel BPE
+trained on a balanced English/Indic corpus. It uses NFKC normalization without
+lowercasing or accent stripping and reserves document, role, tool, context, and
+memory tokens. Pre-32K tokenizers and their matching checkpoints are isolated in
+`archive/legacy_pre_32k`.
 
 ## Overview
 
@@ -244,8 +243,8 @@ Note: Modern architecture is slower on CPU due to larger model size (8.5M vs 1.0
 
 #### Training with Modern Architecture
 ```bash
-# Prepare FineWeb-Edu (10GB)
-python scripts/prepare_fineweb.py --target-gb 10
+# Prepare the capped multi-source bundle without retaining raw downloads.
+python scripts/prepare_dataset_bundle.py --bundle multilingual_v2_32k
 
 # Resume training from checkpoint
 python train.py --config configs/train_config_modern.json --device cuda
@@ -258,6 +257,26 @@ python train.py --config configs/train_config_modern.json --device cuda
 ```bash
 python train.py --config configs/train_config_kaggle.json --device cuda
 ```
+
+### Storage-bounded dataset preparation
+
+`scripts/prepare_streaming_dataset.py` generalizes the FineWeb-Edu pipeline to
+any Hugging Face streaming text source. It normalizes and validates each document,
+performs bounded recent-document deduplication, tokenizes immediately, routes the
+document deterministically to train or validation, and writes exact-size uint16
+binaries. Raw documents are never retained locally.
+
+The production `multilingual_v2_32k` manifest creates a 0.08 GiB remote bundle
+containing FineWeb-Edu, OpenWebMath, Cosmopedia/OpenStax, Cosmopedia/Khan Academy,
+and equal-size Hindi, Bengali, Telugu, Tamil, Marathi, Gujarati, Kannada,
+Malayalam, Punjabi, and Urdu samples. Each source has an isolated prefix, pinned
+upstream revision, durable resume state, physical-size metadata, and tokenizer
+fingerprint sidecars. The retained raw English corpus is separately tokenized
+into `data/train.bin` and `data/val.bin` with the same tokenizer.
+
+Tokenizer v2 with a 32K vocabulary is now the production default. All pre-32K
+checkpoints, binaries, and tokenizer artifacts are isolated under
+`archive/legacy_pre_32k` and must not be mixed into new training runs.
 
 ## Mathematical Background
 
@@ -293,8 +312,8 @@ These results are bounded engineering pilots, not frontier-model claims:
 - GPU execution benchmark: the modern path reached 3,770 training tokens/s and
   1.10x cached-decoding speedup in the small 128-token test. Kernel-launch
   overhead dominates at this scale; see `gpu_benchmark.json`.
-- Tokenizer v2: trained a 16K vocabulary on a bounded 24-variety English/Indic
-  sample. On the in-sample diagnostic it produced 274,362 tokens versus 545,599
+- Tokenizer v2: trained a 32K vocabulary on a bounded 24-variety English/Indic
+  sample. On the in-sample diagnostic it produced 260,981 tokens versus 545,599
   for the legacy tokenizer, with zero unknown tokens and 100% normalized
   round-trip. This is not a held-out language-quality estimate.
 - Scaling feasibility: 10.17M and 23.53M configurations completed equal 15,360
@@ -310,8 +329,13 @@ These results are bounded engineering pilots, not frontier-model claims:
   remains unvalidated and requires key/address-preserving compiler structure.
 
 Reproducible artifacts are `sdpa_backend_probe.json`, `gpu_benchmark.json`,
-`tokenizer/tokenizer_v2_evaluation.json`, `scaling_pilot_gpu.json`,
+`tokenizer/tokenizer_evaluation.json`, `scaling_pilot_gpu.json`,
 `architecture_quality_pilot_gpu.json`, and `context_compression_pilot.json`.
+
+The current production training configuration is a 31,171,968-parameter model
+with 12 layers, 384 dimensions, 6 query heads, 2 KV heads, a 512-token length
+curriculum, and 15 weighted datasets. A batch-2, 512-token BF16 optimizer smoke
+test used 660 MiB peak VRAM on an MX450.
 
 - [RMSNorm](https://arxiv.org/abs/1910.07467) - Zhang & Sennrich, 2019
 - [RoPE](https://arxiv.org/abs/2104.09864) - Su et al., 2021

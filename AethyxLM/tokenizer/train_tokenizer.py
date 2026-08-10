@@ -112,7 +112,11 @@ def train_tokenizer(
         "corpus_size_bytes": corpus_file.stat().st_size,
     }
 
-    metadata_path = output_file.with_name(output_file.stem + "_metadata.json")
+    metadata_path = output_file.with_name(
+        "metadata.json"
+        if output_file.name == TOKENIZER_FILE.name
+        else output_file.stem + "_metadata.json"
+    )
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 

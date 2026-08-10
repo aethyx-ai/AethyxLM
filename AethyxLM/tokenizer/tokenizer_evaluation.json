@@ -1,0 +1,417 @@
+{
+  "evaluation_type": "in-sample tokenizer engineering diagnostic",
+  "warning": "These samples trained tokenizer v2; results are not held-out quality estimates.",
+  "corpus_sha256": "410f0e9c92468c6d8f45e7e78c9408bda495464299f9b1a9e4c27e9a87f7d31f",
+  "tokenizers": {
+    "legacy": {
+      "vocab_size": 1908,
+      "aggregate": {
+        "documents": 1180,
+        "tokens": 545599,
+        "characters_per_token": 1.2397053513661132,
+        "utf8_bytes_per_token": 1.6660001209679636,
+        "unknown_token_rate": 0.6499608686966069,
+        "normalized_roundtrip_rate": 0.0
+      },
+      "per_language": {
+        "eng_Latn": {
+          "documents": 30,
+          "tokens": 133748,
+          "characters_per_token": 3.6654230343631307,
+          "utf8_bytes_per_token": 3.669430570924425,
+          "unknown_token_rate": 0.00011962795705356342,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "asm_Beng": {
+          "documents": 50,
+          "tokens": 29138,
+          "characters_per_token": 0.40071384446427344,
+          "utf8_bytes_per_token": 1.0049420001372777,
+          "unknown_token_rate": 0.8846866634635184,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "ben_Beng": {
+          "documents": 50,
+          "tokens": 26352,
+          "characters_per_token": 0.3957574377656345,
+          "utf8_bytes_per_token": 0.9982923497267759,
+          "unknown_token_rate": 0.8837659380692168,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "brx_Deva": {
+          "documents": 50,
+          "tokens": 15103,
+          "characters_per_token": 0.4027676620538966,
+          "utf8_bytes_per_token": 0.9993378798914123,
+          "unknown_token_rate": 0.8746606634443488,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "doi_Deva": {
+          "documents": 50,
+          "tokens": 6883,
+          "characters_per_token": 0.40868807206160107,
+          "utf8_bytes_per_token": 0.994188580560802,
+          "unknown_token_rate": 0.8660467819264855,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "gom_Deva": {
+          "documents": 50,
+          "tokens": 12175,
+          "characters_per_token": 0.4528952772073922,
+          "utf8_bytes_per_token": 1.0206160164271048,
+          "unknown_token_rate": 0.8458316221765914,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "guj_Gujr": {
+          "documents": 50,
+          "tokens": 20366,
+          "characters_per_token": 0.4111263871157812,
+          "utf8_bytes_per_token": 1.0007365216537367,
+          "unknown_token_rate": 0.8770499852695669,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "hin_Deva": {
+          "documents": 50,
+          "tokens": 25214,
+          "characters_per_token": 0.417823431426985,
+          "utf8_bytes_per_token": 1.0018640437851987,
+          "unknown_token_rate": 0.8692393114936147,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "kan_Knda": {
+          "documents": 50,
+          "tokens": 16666,
+          "characters_per_token": 0.39145565822632905,
+          "utf8_bytes_per_token": 0.9984399375975039,
+          "unknown_token_rate": 0.9000960038401536,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "kas_Arab": {
+          "documents": 50,
+          "tokens": 9037,
+          "characters_per_token": 0.5549407989377005,
+          "utf8_bytes_per_token": 0.9984508133230054,
+          "unknown_token_rate": 0.8565895761867877,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "mai_Deva": {
+          "documents": 50,
+          "tokens": 14302,
+          "characters_per_token": 0.40812473779890923,
+          "utf8_bytes_per_token": 0.998811355055237,
+          "unknown_token_rate": 0.86938889665781,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "mal_Mlym": {
+          "documents": 50,
+          "tokens": 19815,
+          "characters_per_token": 0.3827908150391118,
+          "utf8_bytes_per_token": 1.0,
+          "unknown_token_rate": 0.9097148624779208,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "mar_Deva": {
+          "documents": 50,
+          "tokens": 18502,
+          "characters_per_token": 0.39865960436709547,
+          "utf8_bytes_per_token": 0.998486650091882,
+          "unknown_token_rate": 0.8934169278996865,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "mni_Mtei": {
+          "documents": 50,
+          "tokens": 7424,
+          "characters_per_token": 0.42052801724137934,
+          "utf8_bytes_per_token": 1.0083512931034482,
+          "unknown_token_rate": 0.8611260775862069,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "npi_Deva": {
+          "documents": 50,
+          "tokens": 16862,
+          "characters_per_token": 0.3948523306843791,
+          "utf8_bytes_per_token": 0.9987545961333175,
+          "unknown_token_rate": 0.896750088957419,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "ory_Orya": {
+          "documents": 50,
+          "tokens": 10603,
+          "characters_per_token": 0.4026218994624163,
+          "utf8_bytes_per_token": 0.9989625577666698,
+          "unknown_token_rate": 0.6261435442799208,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "pan_Guru": {
+          "documents": 50,
+          "tokens": 19164,
+          "characters_per_token": 0.4216238781047798,
+          "utf8_bytes_per_token": 1.002035065748278,
+          "unknown_token_rate": 0.8637027760384054,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "san_Deva": {
+          "documents": 50,
+          "tokens": 6151,
+          "characters_per_token": 0.40627540237359777,
+          "utf8_bytes_per_token": 0.9969110713705088,
+          "unknown_token_rate": 0.8927003739229393,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "snd_Deva": {
+          "documents": 50,
+          "tokens": 42862,
+          "characters_per_token": 0.5730950492277542,
+          "utf8_bytes_per_token": 1.0055060426484999,
+          "unknown_token_rate": 0.8308058420045729,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "tam_Taml": {
+          "documents": 50,
+          "tokens": 22515,
+          "characters_per_token": 0.3869864534754608,
+          "utf8_bytes_per_token": 1.0000444148345546,
+          "unknown_token_rate": 0.9192094159449256,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "tel_Telu": {
+          "documents": 50,
+          "tokens": 16466,
+          "characters_per_token": 0.39851815862990403,
+          "utf8_bytes_per_token": 0.9993926879630755,
+          "unknown_token_rate": 0.8888618972428034,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "urd_Arab": {
+          "documents": 50,
+          "tokens": 18815,
+          "characters_per_token": 0.568801488174329,
+          "utf8_bytes_per_token": 1.004039330321552,
+          "unknown_token_rate": 0.8435822482062184,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "khasi": {
+          "documents": 50,
+          "tokens": 5192,
+          "characters_per_token": 2.0677966101694913,
+          "utf8_bytes_per_token": 2.0897534668721107,
+          "unknown_token_rate": 0.026001540832049308,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "santhali": {
+          "documents": 50,
+          "tokens": 32244,
+          "characters_per_token": 0.38686267212504655,
+          "utf8_bytes_per_token": 1.0015506760947772,
+          "unknown_token_rate": 0.9121076789480214,
+          "normalized_roundtrip_rate": 0.0
+        }
+      }
+    },
+    "v2": {
+      "vocab_size": 32000,
+      "aggregate": {
+        "documents": 1180,
+        "tokens": 260981,
+        "characters_per_token": 2.8132316145619796,
+        "utf8_bytes_per_token": 4.14322498572693,
+        "unknown_token_rate": 0.0,
+        "normalized_roundtrip_rate": 1.0
+      },
+      "per_language": {
+        "eng_Latn": {
+          "documents": 30,
+          "tokens": 116234,
+          "characters_per_token": 4.2181461534490765,
+          "utf8_bytes_per_token": 4.223497427602939,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "asm_Beng": {
+          "documents": 50,
+          "tokens": 11228,
+          "characters_per_token": 1.4600997506234414,
+          "utf8_bytes_per_token": 3.8685429283933024,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "ben_Beng": {
+          "documents": 50,
+          "tokens": 10618,
+          "characters_per_token": 1.428705970992654,
+          "utf8_bytes_per_token": 3.8171030325861746,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "brx_Deva": {
+          "documents": 50,
+          "tokens": 6769,
+          "characters_per_token": 1.374649135765992,
+          "utf8_bytes_per_token": 3.65770423991727,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "doi_Deva": {
+          "documents": 50,
+          "tokens": 2732,
+          "characters_per_token": 1.5010980966325036,
+          "utf8_bytes_per_token": 3.919106881405564,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "gom_Deva": {
+          "documents": 50,
+          "tokens": 5052,
+          "characters_per_token": 1.5138558986539985,
+          "utf8_bytes_per_token": 3.7268408551068886,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "guj_Gujr": {
+          "documents": 50,
+          "tokens": 8238,
+          "characters_per_token": 1.4813061422675406,
+          "utf8_bytes_per_token": 3.868778829813061,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "hin_Deva": {
+          "documents": 50,
+          "tokens": 9932,
+          "characters_per_token": 1.521949254933548,
+          "utf8_bytes_per_token": 3.927104309303262,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "kan_Knda": {
+          "documents": 50,
+          "tokens": 7293,
+          "characters_per_token": 1.3626765391471274,
+          "utf8_bytes_per_token": 3.682983682983683,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "kas_Arab": {
+          "documents": 50,
+          "tokens": 3087,
+          "characters_per_token": 1.9335924846128927,
+          "utf8_bytes_per_token": 3.55814706835115,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "mai_Deva": {
+          "documents": 50,
+          "tokens": 5206,
+          "characters_per_token": 1.528428736073761,
+          "utf8_bytes_per_token": 3.9656165962351135,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "mal_Mlym": {
+          "documents": 50,
+          "tokens": 8774,
+          "characters_per_token": 1.3485297469797128,
+          "utf8_bytes_per_token": 3.7105083200364715,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "mar_Deva": {
+          "documents": 50,
+          "tokens": 7761,
+          "characters_per_token": 1.4145084396340677,
+          "utf8_bytes_per_token": 3.771163509856977,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "mni_Mtei": {
+          "documents": 50,
+          "tokens": 2503,
+          "characters_per_token": 1.6244506592089492,
+          "utf8_bytes_per_token": 4.122253296044747,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "npi_Deva": {
+          "documents": 50,
+          "tokens": 6606,
+          "characters_per_token": 1.4464123524069028,
+          "utf8_bytes_per_token": 3.8640629730547986,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "ory_Orya": {
+          "documents": 50,
+          "tokens": 4126,
+          "characters_per_token": 1.4428017450315076,
+          "utf8_bytes_per_token": 3.7886572952011632,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "pan_Guru": {
+          "documents": 50,
+          "tokens": 7428,
+          "characters_per_token": 1.5565428109854604,
+          "utf8_bytes_per_token": 3.9907108239095317,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "san_Deva": {
+          "documents": 50,
+          "tokens": 2628,
+          "characters_per_token": 1.3869863013698631,
+          "utf8_bytes_per_token": 3.641552511415525,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "snd_Deva": {
+          "documents": 50,
+          "tokens": 7378,
+          "characters_per_token": 3.3519924098671727,
+          "utf8_bytes_per_token": 5.8930604499864465,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "tam_Taml": {
+          "documents": 50,
+          "tokens": 9955,
+          "characters_per_token": 1.351783023606228,
+          "utf8_bytes_per_token": 3.690808638874937,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "tel_Telu": {
+          "documents": 50,
+          "tokens": 7894,
+          "characters_per_token": 1.3154294400810742,
+          "utf8_bytes_per_token": 3.5363567266278184,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "urd_Arab": {
+          "documents": 50,
+          "tokens": 3182,
+          "characters_per_token": 3.373350094280327,
+          "utf8_bytes_per_token": 5.956945317410434,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "khasi": {
+          "documents": 50,
+          "tokens": 2770,
+          "characters_per_token": 3.875812274368231,
+          "utf8_bytes_per_token": 3.922743682310469,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "santhali": {
+          "documents": 50,
+          "tokens": 3587,
+          "characters_per_token": 3.4775578477836633,
+          "utf8_bytes_per_token": 9.0030666294954,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        }
+      }
+    }
+  }
+}

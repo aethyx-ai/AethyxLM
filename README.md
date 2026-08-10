@@ -40,6 +40,10 @@ Beyond scaling model capability, we're researching new approaches to make large 
 - Gradient Accumulation
 - Checkpoint Save & Resume
 - Modular Training Pipeline
+- Storage-capped streaming dataset preparation with direct-to-binary tokenization
+- Independent resume state and tokenizer fingerprints for every dataset source
+- Production 32K multilingual tokenizer and 31.17M-parameter training profile
+- Balanced English plus ten-language Indic training mixture
 
 ### ✅ Inference
 

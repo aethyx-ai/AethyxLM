@@ -1,0 +1,12 @@
+{
+  "tokenizer_file": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\tokenizer.json",
+  "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+  "vocab_size": 32000,
+  "tokens": 100146,
+  "dtype": "uint16",
+  "dataset": "open-web-math/open-web-math",
+  "dataset_config": null,
+  "source_split": "train",
+  "source_revision": "fde8ef8de2300f5e778f56261843dab89f230815",
+  "binary_split": "validation"
+}

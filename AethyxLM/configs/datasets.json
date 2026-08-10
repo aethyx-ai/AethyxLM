@@ -1,12 +1,77 @@
 {
-  "tinystories": {
+  "tinystories_v2": {
     "train": "data/train.bin",
     "val": "data/val.bin",
-    "weight": 0.2
+    "weight": 0.15
   },
-  "fineweb_edu": {
-    "train": "data/fineweb_train.bin",
-    "val": "data/fineweb_val.bin",
-    "weight": 0.8
+  "fineweb_edu_v2": {
+    "train": "data/fineweb_edu_v2_train.bin",
+    "val": "data/fineweb_edu_v2_val.bin",
+    "weight": 0.20
+  },
+  "openwebmath_v2": {
+    "train": "data/openwebmath_v2_train.bin",
+    "val": "data/openwebmath_v2_val.bin",
+    "weight": 0.10
+  },
+  "cosmopedia_openstax_v2": {
+    "train": "data/cosmopedia_openstax_v2_train.bin",
+    "val": "data/cosmopedia_openstax_v2_val.bin",
+    "weight": 0.075
+  },
+  "cosmopedia_khan_v2": {
+    "train": "data/cosmopedia_khan_v2_train.bin",
+    "val": "data/cosmopedia_khan_v2_val.bin",
+    "weight": 0.075
+  },
+  "indic_hindi_v2": {
+    "train": "data/indic_hindi_v2_train.bin",
+    "val": "data/indic_hindi_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_bengali_v2": {
+    "train": "data/indic_bengali_v2_train.bin",
+    "val": "data/indic_bengali_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_telugu_v2": {
+    "train": "data/indic_telugu_v2_train.bin",
+    "val": "data/indic_telugu_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_tamil_v2": {
+    "train": "data/indic_tamil_v2_train.bin",
+    "val": "data/indic_tamil_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_marathi_v2": {
+    "train": "data/indic_marathi_v2_train.bin",
+    "val": "data/indic_marathi_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_gujarati_v2": {
+    "train": "data/indic_gujarati_v2_train.bin",
+    "val": "data/indic_gujarati_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_kannada_v2": {
+    "train": "data/indic_kannada_v2_train.bin",
+    "val": "data/indic_kannada_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_malayalam_v2": {
+    "train": "data/indic_malayalam_v2_train.bin",
+    "val": "data/indic_malayalam_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_punjabi_v2": {
+    "train": "data/indic_punjabi_v2_train.bin",
+    "val": "data/indic_punjabi_v2_val.bin",
+    "weight": 0.04
+  },
+  "indic_urdu_v2": {
+    "train": "data/indic_urdu_v2_train.bin",
+    "val": "data/indic_urdu_v2_val.bin",
+    "weight": 0.04
   }
 }

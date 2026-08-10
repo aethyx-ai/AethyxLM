@@ -1,13 +1,13 @@
 {
   "seed": 42,
   "model": {
-    "vocab_size": 1908,
-    "context_length": 128,
-    "embed_dim": 256,
-    "num_heads": 8,
+    "vocab_size": 32000,
+    "context_length": 512,
+    "embed_dim": 384,
+    "num_heads": 6,
     "num_kv_heads": 2,
-    "num_layers": 8,
-    "ffn_dim": 704,
+    "num_layers": 12,
+    "ffn_dim": 1024,
     "dropout": 0.1,
     "use_bias": false,
     "layer_norm_eps": 1e-5,
@@ -16,7 +16,8 @@
     "ffn_type": "swiglu",
     "fused_qkv": true,
     "use_sdpa": true,
-    "qk_norm": false,
+    "qk_norm": true,
+    "rope_max_seq_len": 16384,
     "gradient_checkpointing": true
   },
   "training": {
@@ -25,45 +26,33 @@
     "betas": [0.9, 0.95],
     "eps": 1e-8,
     "grad_clip": 1.0,
-    "warmup_steps": 1000,
-    "max_steps": 50000,
+    "warmup_steps": 2000,
+    "max_steps": 100000,
     "min_lr_ratio": 0.1,
-    "grad_accum_steps": 4,
+    "grad_accum_steps": 16,
     "use_amp": true,
     "amp_dtype": "auto",
     "fused_optimizer": true,
     "z_loss_coefficient": 1e-4,
     "context_schedule": [
-      {"step": 0, "context_length": 64},
-      {"step": 5000, "context_length": 128}
+      {"step": 0, "context_length": 128},
+      {"step": 10000, "context_length": 256},
+      {"step": 30000, "context_length": 512}
     ],
     "torch_compile": false,
     "compile_mode": "default",
-    "batch_size": 8,
+    "batch_size": 2,
     "num_workers": 0,
     "eval_interval": 1000,
-    "eval_batches": 100,
+    "eval_batches": 50,
     "save_interval": 1000,
     "log_interval": 50,
     "generate_interval": 999999
   },
   "data": {
-    "datasets": [
-      {
-        "name": "tinystories",
-        "train": "data/train.bin",
-        "val": "data/val.bin",
-        "weight": 0.2
-      },
-      {
-        "name": "fineweb_edu",
-        "train": "data/fineweb_train.bin",
-        "val": "data/fineweb_val.bin",
-        "weight": 0.8
-      }
-    ],
-    "context_length": 128,
-    "batch_size": 8,
+    "datasets_file": "configs/datasets.json",
+    "context_length": 512,
+    "batch_size": 2,
     "num_workers": 0,
     "shuffle": false
   },
@@ -75,6 +64,6 @@
   },
   "tokenizer": {
     "tokenizer_file": "tokenizer/tokenizer.json",
-    "vocab_size": 1908
+    "vocab_size": 32000
   }
 }

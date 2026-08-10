@@ -1,0 +1,12 @@
+{
+  "tokenizer_file": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\tokenizer.json",
+  "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+  "vocab_size": 32000,
+  "tokens": 5296737,
+  "dtype": "uint16",
+  "dataset": "HuggingFaceFW/fineweb-edu",
+  "dataset_config": "sample-10BT",
+  "source_split": "train",
+  "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+  "binary_split": "train"
+}

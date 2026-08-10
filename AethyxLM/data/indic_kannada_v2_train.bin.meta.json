@@ -1,0 +1,12 @@
+{
+  "tokenizer_file": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\tokenizer.json",
+  "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+  "vocab_size": 32000,
+  "tokens": 2662286,
+  "dtype": "uint16",
+  "dataset": "ai4bharat/IndicCorpV2",
+  "dataset_config": "indiccorp_v2",
+  "source_split": "kan_Knda",
+  "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+  "binary_split": "train"
+}

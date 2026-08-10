@@ -1,0 +1,177 @@
+{
+  "multilingual_v2_32k": {
+    "description": "Fresh 32K-tokenizer English and major-Indic pretraining bundle",
+    "tokenizer": "tokenizer/tokenizer.json",
+    "reserve_gb": 2.0,
+    "sources": [
+      {
+        "name": "fineweb_edu_v2",
+        "dataset_name": "HuggingFaceFW/fineweb-edu",
+        "source_revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+        "dataset_config": "sample-10BT",
+        "source_split": "train",
+        "text_field": "text",
+        "target_gb": 0.01,
+        "val_split": 0.01,
+        "dedup_window": 100000,
+        "license": "ODC-By-1.0; Common Crawl terms also apply"
+      },
+      {
+        "name": "openwebmath_v2",
+        "dataset_name": "open-web-math/open-web-math",
+        "source_revision": "fde8ef8de2300f5e778f56261843dab89f230815",
+        "dataset_config": null,
+        "source_split": "train",
+        "text_field": "text",
+        "target_gb": 0.01,
+        "val_split": 0.01,
+        "dedup_window": 100000,
+        "license": "ODC-By-1.0; underlying source terms also apply"
+      },
+      {
+        "name": "cosmopedia_openstax_v2",
+        "dataset_name": "HuggingFaceTB/cosmopedia",
+        "source_revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+        "dataset_config": "openstax",
+        "source_split": "train",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "Apache-2.0 dataset release; review source dataset card"
+      },
+      {
+        "name": "cosmopedia_khan_v2",
+        "dataset_name": "HuggingFaceTB/cosmopedia",
+        "source_revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+        "dataset_config": "khanacademy",
+        "source_split": "train",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "Apache-2.0 dataset release; review source dataset card"
+      },
+      {
+        "name": "indic_hindi_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "hin_Deva",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_bengali_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "ben_Beng",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_telugu_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "tel_Telu",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_tamil_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "tam_Taml",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_marathi_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "mar_Deva",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_gujarati_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "guj_Gujr",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_kannada_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "kan_Knda",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_malayalam_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "mal_Mlym",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_punjabi_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "pan_Guru",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      },
+      {
+        "name": "indic_urdu_v2",
+        "dataset_name": "ai4bharat/IndicCorpV2",
+        "source_revision": "2d7285e6ce14fdb3fb2449c9f89427b9f582ac3f",
+        "dataset_config": "indiccorp_v2",
+        "source_split": "urd_Arab",
+        "text_field": "text",
+        "target_gb": 0.005,
+        "val_split": 0.01,
+        "dedup_window": 50000,
+        "license": "CC0-1.0"
+      }
+    ]
+  }
+}

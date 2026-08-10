@@ -15,7 +15,9 @@ CORPUS_FILE = DATA_DIR / "corpus.txt"
 
 # Output
 TOKENIZER_FILE = ROOT_DIR / "tokenizer.json"
-TOKENIZER_V2_FILE = ROOT_DIR / "tokenizer_v2.json"
+# Tokenizer v2 is now the production default. Older tokenizer artifacts live in
+# archive/legacy_pre_32k/tokenizers.
+TOKENIZER_V2_FILE = TOKENIZER_FILE
 
 # Tokenizer settings
 VOCAB_SIZE = 32000

@@ -1,0 +1,12 @@
+{
+  "tokenizer_file": "D:\\CODING\\AETHYXLabs\\AethyxLM\\tokenizer\\tokenizer.json",
+  "tokenizer_sha256": "1e32ad4216abb85fc0fdfa68f2ecd1eb0eff65de363e8b1e93bfeb71c59984b0",
+  "vocab_size": 1908,
+  "tokens": 25739,
+  "dtype": "uint16",
+  "dataset": "HuggingFaceTB/cosmopedia",
+  "dataset_config": "khanacademy",
+  "source_split": "train",
+  "source_revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+  "binary_split": "validation"
+}
