@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "request_id": "deployment-location",
+      "query": "Where is the Aethyx deployment located?",
+      "relevant_source_ids": ["deployment"],
+      "exact_values": ["123456789"],
+      "items": [
+        {
+          "source_id": "system",
+          "kind": "system",
+          "text": "Answer only from the supplied context.",
+          "priority": 1.0,
+          "protected": true
+        },
+        {
+          "source_id": "deployment",
+          "kind": "document",
+          "text": "The current Aethyx research deployment is located in Bengaluru, India.",
+          "priority": 0.9
+        },
+        {
+          "source_id": "unrelated",
+          "kind": "document",
+          "text": "This note discusses gardening schedules and seasonal rainfall.",
+          "priority": 0.2
+        },
+        {
+          "source_id": "state",
+          "kind": "agent_state",
+          "text": "The exact request identifier is 123456789.",
+          "priority": 0.8
+        }
+      ]
+    },
+    {
+      "request_id": "tool-owner",
+      "query": "Which team owns the search tool?",
+      "relevant_source_ids": ["tool-doc"],
+      "items": [
+        {
+          "source_id": "tool-schema",
+          "kind": "tool_schema",
+          "text": "search(query: string, max_results: integer) -> results",
+          "priority": 1.0
+        },
+        {
+          "source_id": "tool-doc",
+          "kind": "document",
+          "text": "The platform team owns and maintains the search tool.",
+          "priority": 0.8
+        },
+        {
+          "source_id": "weather-doc",
+          "kind": "document",
+          "text": "The weather tool is maintained by the data team.",
+          "priority": 0.4
+        }
+      ]
+    }
+  ]
+}

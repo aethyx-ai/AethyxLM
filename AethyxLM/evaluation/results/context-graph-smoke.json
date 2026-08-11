@@ -1,0 +1,36 @@
+{
+  "representation": "graph",
+  "cases": 2,
+  "baseline_text_tokens": 138,
+  "compiled_text_equivalent_tokens": 138,
+  "text_equivalent_reduction": 0.0,
+  "relevant_source_recall": 1.0,
+  "exact_value_retention": 1.0,
+  "visual_pages": 0,
+  "model_task_accuracy": null,
+  "warning": "Token reduction is measured on the serialized research envelope. Visual pages have not been assigned text-token equivalents and no model accuracy claim is made until a compatible encoder is evaluated.",
+  "details": [
+    {
+      "request_id": "deployment-location",
+      "selected_mode": "raw",
+      "source_tokens": 76,
+      "compiled_text_equivalent_tokens": 76,
+      "audit_manifest_tokens": 506,
+      "relevant_recall": 1.0,
+      "warnings": [
+        "Compression bypassed because the compact payload did not meet the configured profitability threshold."
+      ]
+    },
+    {
+      "request_id": "tool-owner",
+      "selected_mode": "raw",
+      "source_tokens": 62,
+      "compiled_text_equivalent_tokens": 62,
+      "audit_manifest_tokens": 447,
+      "relevant_recall": 1.0,
+      "warnings": [
+        "Compression bypassed because the compact payload did not meet the configured profitability threshold."
+      ]
+    }
+  ]
+}

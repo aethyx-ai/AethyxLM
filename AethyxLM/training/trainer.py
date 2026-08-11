@@ -37,6 +37,7 @@ from model.config import CONTEXT_LENGTH
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
 from training.scheduler import get_cosine_schedule_with_warmup
+from tracking import JsonlExperimentTracker
 
 
 def create_grad_scaler(enabled: bool):
@@ -91,6 +92,10 @@ class Trainer:
         tokenizer_sha256: Optional[str] = None,
         eval_batches: Optional[int] = None,
         tokenizer_path: Optional[str] = None,
+        milestone_interval: int = 0,
+        milestone_dir: Optional[str] = None,
+        metrics_file: Optional[str] = None,
+        run_id: Optional[str] = None,
     ):
         self.model = model
         self.is_distributed = dist.is_available() and dist.is_initialized()
@@ -122,6 +127,7 @@ class Trainer:
         self.eval_interval = eval_interval
         self.save_interval = save_interval
         self.generate_interval = generate_interval
+        self.milestone_interval = int(milestone_interval or 0)
         if self.save_interval <= 0:
             raise ValueError("save_interval must be positive")
         if self.eval_interval <= 0:
@@ -165,8 +171,26 @@ class Trainer:
         # Create directories
         self.checkpoint_dir = Path(checkpoint_dir).expanduser().resolve()
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.milestone_dir = Path(
+            milestone_dir or self.checkpoint_dir / "milestones"
+        ).expanduser().resolve()
+        if self.milestone_interval > 0:
+            self.milestone_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.tracker = (
+            JsonlExperimentTracker(
+                metrics_file,
+                run_id=run_id,
+                metadata={
+                    "max_steps": self.max_steps,
+                    "checkpoint_dir": str(self.checkpoint_dir),
+                    "milestone_interval": self.milestone_interval,
+                },
+            )
+            if metrics_file and self.is_main_process
+            else None
+        )
         
         # TensorBoard
         self.tensorboard_dir = Path(tensorboard_dir or self.log_dir / "tensorboard")
@@ -183,6 +207,16 @@ class Trainer:
         
         # Signal handlers
         self._register_signal_handlers()
+
+    def _track(self, event: str, **values):
+        tracker = getattr(self, "tracker", None)
+        if tracker is not None:
+            tracker.log(
+                event,
+                step=self.step,
+                tokens_seen=getattr(self, "tokens_seen", 0),
+                **values,
+            )
 
     def _register_signal_handlers(self):
         def signal_handler(signum, frame):
@@ -423,6 +457,14 @@ class Trainer:
             step_path = self.checkpoint_dir / f"checkpoint_step_{self.step}.pt"
             self._atomic_torch_save(checkpoint, step_path)
             print(f"[OK] Saved checkpoint_step_{self.step}.pt")
+            milestone_interval = getattr(self, "milestone_interval", 0)
+            if milestone_interval > 0 and self.step % milestone_interval == 0:
+                from training.milestones import archive_milestone
+
+                milestone_path = archive_milestone(step_path, self.milestone_dir)
+                print(f"[OK] Preserved milestone {milestone_path}")
+                self._track("milestone_saved", path=str(milestone_path))
+            self._track("checkpoint_saved", path=str(step_path))
             self._rotate_checkpoints()
 
     @staticmethod
@@ -487,6 +529,7 @@ class Trainer:
                 )
         
         print(f"Loaded checkpoint from step {self.step}")
+        self._track("checkpoint_loaded", path=str(Path(path).expanduser().resolve()))
 
     def train(self):
         print(f"Starting training on {self.device}")
@@ -594,6 +637,14 @@ class Trainer:
                             self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
                             self.writer.add_scalar("train/tokens_seen", self.tokens_seen, self.step)
                             self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
+                        self._track(
+                            "train_metrics",
+                            loss=avg_loss,
+                            learning_rate=lr,
+                            tokens_per_second=tokens_per_sec,
+                            gpu_memory_gb=torch.cuda.memory_allocated() / 1e9,
+                            context_length=self._active_context_length(),
+                        )
                         
                         running_loss = 0.0
                         interval_tokens = 0
@@ -616,6 +667,7 @@ class Trainer:
                         
                         if self.writer:
                             self.writer.add_scalar("val/loss", val_loss, self.step)
+                        self._track("validation", loss=val_loss)
                         
                         is_best = val_loss < self.best_val_loss
                         if is_best:
@@ -638,6 +690,7 @@ class Trainer:
         if self.step % self.save_interval != 0:
             self._save_checkpoint(is_best=False, force=True)
         print("Training complete!")
+        self._track("run_completed")
         
         if self.writer:
             self.writer.close()

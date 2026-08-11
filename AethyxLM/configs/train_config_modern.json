@@ -58,6 +58,9 @@
   },
   "checkpoint": {
     "checkpoint_dir": "checkpoints",
+    "milestone_dir": "checkpoints/milestones",
+    "milestone_interval": 10000,
+    "metrics_file": "logs/metrics.jsonl",
     "log_interval": 10,
     "eval_interval": 1000,
     "save_interval": 1000

@@ -1,0 +1,182 @@
+{
+  "created_at": "2026-08-11T18:27:03.730818+00:00",
+  "warning": "Generation repetition metrics are deterministic diagnostics, not a substitute for human or benchmark-based coherence judgments.",
+  "checkpoints": [
+    {
+      "path": "D:\\CODING\\AETHYXLabs\\AethyxLM\\test_checkpoints_full\\checkpoint_step_10.pt",
+      "step": 10,
+      "tokens_seen": 2560,
+      "best_val_loss": 10.265012645721436,
+      "model_parameters": 14543360,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 10.504814147949219,
+            "perplexity": 36490.752377504716,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 10.377714157104492,
+            "perplexity": 32135.42094873382,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 10.34924602508545,
+            "perplexity": 31233.484675661384,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 10.430532455444336,
+            "perplexity": 33878.38418879434,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 10.388101577758789,
+            "perplexity": 32470.964784464897,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 10.468550682067871,
+            "perplexity": 35191.177186850706,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 10.478904724121094,
+            "perplexity": 35557.44099866109,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 10.451509475708008,
+            "perplexity": 34596.55797853002,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 10.322184562683105,
+            "perplexity": 30399.594931478005,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 10.467086791992188,
+            "perplexity": 35139.698860313976,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 10.377996444702148,
+            "perplexity": 32144.493660009797,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 10.3992919921875,
+            "perplexity": 32836.3690366621,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 10.510805130004883,
+            "perplexity": 36710.02399050688,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 10.404391288757324,
+            "perplexity": 33004.239066431954,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 10.474239349365234,
+            "perplexity": 35391.9385766437,
+            "tokens": 128,
+            "batches": 1,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 10.421785526275634,
+        "weighted_perplexity": 33583.34458827942
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "fact",
+          "finish_reason": "length",
+          "tokens": 1,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "मनम",
+          "finish_reason": "length",
+          "tokens": 1,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "fact",
+          "finish_reason": "length",
+          "tokens": 1,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "fact",
+          "finish_reason": "length",
+          "tokens": 1,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 32,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 32,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 32,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        }
+      ]
+    }
+  ]
+}

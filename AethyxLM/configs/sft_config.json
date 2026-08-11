@@ -1,0 +1,38 @@
+{
+  "seed": 42,
+  "base_checkpoint": "checkpoints/milestones/checkpoint_step_100000.pt",
+  "tokenizer": "tokenizer/tokenizer.json",
+  "data": {
+    "train": "data/sft/train.jsonl",
+    "validation": "data/sft/validation.jsonl",
+    "context_length": 512,
+    "batch_size": 4,
+    "num_workers": 0
+  },
+  "training": {
+    "learning_rate": 0.00002,
+    "weight_decay": 0.01,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "grad_clip": 1.0,
+    "warmup_steps": 200,
+    "max_steps": 5000,
+    "min_lr_ratio": 0.1,
+    "grad_accum_steps": 8,
+    "use_amp": true,
+    "amp_dtype": "auto",
+    "fused_optimizer": true,
+    "eval_batches": 50
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints/sft",
+    "milestone_dir": "checkpoints/sft/milestones",
+    "milestone_interval": 1000,
+    "metrics_file": "logs/sft/metrics.jsonl",
+    "log_dir": "logs/sft",
+    "tensorboard_dir": "logs/sft/tensorboard",
+    "log_interval": 20,
+    "eval_interval": 250,
+    "save_interval": 500
+  }
+}

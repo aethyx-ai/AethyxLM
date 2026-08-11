@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from model.gpt import GPT
 from tokenizer.tokenizer import AethyxTokenizer
+from inference.generation import SamplingConfig, generate_text
 
 
 def checkpoint_step(path: Path) -> Optional[int]:
@@ -184,7 +185,6 @@ def truncate_at_turn_marker(text: str) -> str:
     return text[:min(positions)].rstrip() if positions else text.strip()
 
 
-@torch.inference_mode()
 def generate(
     model: GPT,
     tokenizer: AethyxTokenizer,
@@ -192,63 +192,28 @@ def generate(
     max_new: int = 200,
     temperature: float = 0.8,
     top_k: int = 50,
+    top_p: float = 0.95,
+    min_p: float = 0.0,
+    repetition_penalty: float = 1.05,
+    on_text=None,
 ) -> str:
-    """Generate and return only the continuation, decoded natively by tokenizer v2."""
-    if temperature <= 0:
-        raise ValueError("temperature must be positive")
-    if max_new <= 0:
-        raise ValueError("max_new must be positive")
-    if top_k < 0:
-        raise ValueError("top_k cannot be negative")
-
-    prompt_ids = tokenizer.encode(prompt)
-    if not prompt_ids:
-        if tokenizer.bos_id is None:
-            raise ValueError("prompt produced no tokens and the tokenizer has no BOS token")
-        prompt_ids = [tokenizer.bos_id]
-
-    context_length = model.context_length
-    input_ids = torch.tensor(
-        [prompt_ids[-context_length:]],
-        dtype=torch.long,
-        device=next(model.parameters()).device,
+    """Compatibility wrapper around the reusable inference engine."""
+    result = generate_text(
+        model,
+        tokenizer,
+        prompt,
+        sampling=SamplingConfig(
+            max_new_tokens=max_new,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
+        ),
+        stop_strings=("\nUser:", "User:", "\nAethyx:", "Aethyx:"),
+        on_text=on_text,
     )
-    sequence = input_ids
-    generated_ids: list[int] = []
-    logits, cache = model(input_ids, use_cache=True)
-
-    for _ in range(max_new):
-        next_logits = logits[:, -1, :].float() / temperature
-        for blocked_id in (tokenizer.pad_id, tokenizer.bos_id):
-            if blocked_id is not None:
-                next_logits[:, blocked_id] = -float("inf")
-
-        if top_k:
-            threshold = torch.topk(
-                next_logits, min(top_k, next_logits.size(-1))
-            ).values[:, [-1]]
-            next_logits = next_logits.masked_fill(next_logits < threshold, -float("inf"))
-
-        probabilities = torch.softmax(next_logits, dim=-1)
-        next_id = torch.multinomial(probabilities, num_samples=1)
-        token_id = int(next_id.item())
-        if tokenizer.eos_id is not None and token_id == tokenizer.eos_id:
-            break
-
-        generated_ids.append(token_id)
-        sequence = torch.cat((sequence, next_id), dim=1)
-        partial_text = tokenizer.decode(generated_ids)
-        if truncate_at_turn_marker(partial_text) != partial_text.strip():
-            break
-
-        cached_length = cache[0][0].size(2)
-        if cached_length >= context_length:
-            window = sequence[:, -context_length:]
-            logits, cache = model(window, use_cache=True)
-        else:
-            logits, cache = model(next_id, kv_cache=cache, use_cache=True)
-
-    return truncate_at_turn_marker(tokenizer.decode(generated_ids))
+    return result.text
 
 
 def trim_to_token_budget(
@@ -270,12 +235,24 @@ def safe_print(text: str):
         print(text.encode("ascii", "replace").decode("ascii"))
 
 
+def stream_write(text: str):
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        sys.stdout.write(text.encode("ascii", "replace").decode("ascii"))
+    sys.stdout.flush()
+
+
 def interactive_chat(
     model: GPT,
     tokenizer: AethyxTokenizer,
     temperature: float,
     top_k: int,
+    top_p: float,
+    min_p: float,
+    repetition_penalty: float,
     max_new: int,
+    stream: bool,
 ):
     print("\nChat started. Commands: /temp, /topk, /max, /clear, /help, /quit")
     print(
@@ -330,6 +307,8 @@ def interactive_chat(
 
         prompt = f"{history}User: {user_text}\nAethyx:"
         try:
+            if stream:
+                print("\nAethyx: ", end="", flush=True)
             response = generate(
                 model,
                 tokenizer,
@@ -337,8 +316,15 @@ def interactive_chat(
                 max_new=max_new,
                 temperature=temperature,
                 top_k=top_k,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+                on_text=stream_write if stream else None,
             )
-            safe_print(f"\nAethyx: {response}")
+            if stream:
+                print()
+            else:
+                safe_print(f"\nAethyx: {response}")
             history_budget = max(32, model.context_length - max_new - 32)
             history = trim_to_token_budget(
                 f"{prompt} {response}\n",
@@ -380,7 +366,11 @@ def parse_args():
     )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=50)
+    parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--min-p", type=float, default=0.0)
+    parser.add_argument("--repetition-penalty", type=float, default=1.05)
     parser.add_argument("--max-new", type=int, default=200)
+    parser.add_argument("--stream", action="store_true")
     return parser.parse_args()
 
 
@@ -404,6 +394,10 @@ def main():
     )
 
     if args.prompt is not None:
+        if args.stream:
+            callback = stream_write
+        else:
+            callback = None
         continuation = generate(
             model,
             tokenizer,
@@ -411,8 +405,15 @@ def main():
             max_new=args.max_new,
             temperature=args.temperature,
             top_k=args.top_k,
+            top_p=args.top_p,
+            min_p=args.min_p,
+            repetition_penalty=args.repetition_penalty,
+            on_text=callback,
         )
-        safe_print(continuation)
+        if args.stream:
+            print()
+        else:
+            safe_print(continuation)
         return
 
     interactive_chat(
@@ -420,7 +421,11 @@ def main():
         tokenizer,
         temperature=args.temperature,
         top_k=args.top_k,
+        top_p=args.top_p,
+        min_p=args.min_p,
+        repetition_penalty=args.repetition_penalty,
         max_new=args.max_new,
+        stream=args.stream,
     )
 
 

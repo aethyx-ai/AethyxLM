@@ -545,6 +545,18 @@ def main():
         log_interval=checkpoint_config['log_interval'],
         eval_interval=train_config['eval_interval'],
         save_interval=checkpoint_config['save_interval'],
+        milestone_interval=checkpoint_config.get('milestone_interval', 0),
+        milestone_dir=str(
+            resolve_project_path(
+                checkpoint_config.get('milestone_dir', 'checkpoints/milestones')
+            )
+        ),
+        metrics_file=str(
+            resolve_project_path(
+                checkpoint_config.get('metrics_file', 'logs/metrics.jsonl')
+            )
+        ),
+        run_id=checkpoint_config.get('run_id'),
         generate_interval=train_config.get('generate_interval', 1000),
         device=device,
     )
