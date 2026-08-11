@@ -479,9 +479,12 @@ class Trainer:
             import numpy as np
             random.setstate(checkpoint["rng_state"]["python"])
             np.random.set_state(checkpoint["rng_state"]["numpy"])
-            torch.set_rng_state(checkpoint["rng_state"]["torch"])
+            # map_location may move this CPU RNG tensor onto CUDA.
+            torch.set_rng_state(checkpoint["rng_state"]["torch"].cpu())
             if torch.cuda.is_available() and checkpoint["rng_state"]["cuda"]:
-                torch.cuda.set_rng_state_all(checkpoint["rng_state"]["cuda"])
+                torch.cuda.set_rng_state_all(
+                    [state.cpu() for state in checkpoint["rng_state"]["cuda"]]
+                )
         
         print(f"Loaded checkpoint from step {self.step}")
 
