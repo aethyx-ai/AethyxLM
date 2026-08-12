@@ -22,7 +22,12 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from model.gpt import GPT
 from model.config import VOCAB_SIZE, CONTEXT_LENGTH, NUM_LAYERS
 from tokenizer.tokenizer import AethyxTokenizer
-from dataset.dataset import AethyxDataset, MixedAethyxDataset, worker_init_fn
+from dataset.dataset import (
+    AethyxDataset,
+    DistributedStridedSampler,
+    MixedAethyxDataset,
+    worker_init_fn,
+)
 from training.trainer import Trainer
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
@@ -476,11 +481,11 @@ def main():
     
     # Create distributed samplers for DDP
     if is_ddp:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, num_replicas=world_size, rank=rank, shuffle=True
+        train_sampler = DistributedStridedSampler(
+            train_dataset, num_replicas=world_size, rank=rank
         )
-        val_sampler = torch.utils.data.distributed.DistributedSampler(
-            val_dataset, num_replicas=world_size, rank=rank, shuffle=False
+        val_sampler = DistributedStridedSampler(
+            val_dataset, num_replicas=world_size, rank=rank
         )
         train_shuffle = False  # Sampler handles shuffling
         val_shuffle = False

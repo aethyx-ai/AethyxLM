@@ -13,7 +13,7 @@ import os
 
 import torch
 import numpy as np
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 from tokenizer.tokenizer import AethyxTokenizer
 
@@ -111,6 +111,41 @@ def worker_init_fn(worker_id: int):
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+
+
+class DistributedStridedSampler(Sampler):
+    """Partition a virtual dataset across ranks without materializing indices.
+
+    ``DistributedSampler(shuffle=True)`` creates ``randperm(len(dataset))``.
+    That is prohibitively large for the mixed dataset because its logical length
+    can be hundreds of millions even though its sources are memory-mapped.  The
+    mixed dataset already derives deterministic random samples from
+    ``(seed, epoch, index)``, so a disjoint strided index range provides DDP
+    sharding without a second global shuffle or an O(dataset length) allocation.
+    """
+
+    def __init__(self, dataset, num_replicas: int, rank: int):
+        if num_replicas <= 0:
+            raise ValueError("num_replicas must be positive")
+        if rank < 0 or rank >= num_replicas:
+            raise ValueError("rank must be in [0, num_replicas)")
+        self.dataset = dataset
+        self.num_replicas = int(num_replicas)
+        self.rank = int(rank)
+        self.num_samples = len(dataset) // self.num_replicas
+        self.epoch = 0
+
+    def __iter__(self):
+        stop = self.rank + self.num_samples * self.num_replicas
+        return iter(range(self.rank, stop, self.num_replicas))
+
+    def __len__(self):
+        return self.num_samples
+
+    def set_epoch(self, epoch: int):
+        # MixedAethyxDataset owns epoch-dependent randomization.  Retaining this
+        # method keeps the standard Trainer sampler lifecycle compatible.
+        self.epoch = int(epoch)
 
 
 class AethyxDataset(Dataset):
