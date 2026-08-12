@@ -495,7 +495,10 @@ class Trainer:
 
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        # Stage the serialized state on system RAM first. Loading a complete
+        # optimizer checkpoint directly onto CUDA creates an avoidable VRAM
+        # spike, which is especially costly on 6 GB laptop GPUs.
+        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
         saved_tokenizer = checkpoint.get("config", {}).get("tokenizer_sha256")
         if (
             saved_tokenizer

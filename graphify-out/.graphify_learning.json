@@ -1,5 +1,102 @@
 {
-  "generated_at": "2026-08-12T12:50:34.442345+00:00",
-  "nodes": {},
+  "generated_at": "2026-08-12T15:53:12.970861+00:00",
+  "nodes": {
+    "aethyxlm_chat": {
+      "code_fingerprint": "b58cd1ded11bff89be2a7eb142d8f6c02091b8513310da09d8c9ddfdfab0fce2",
+      "label": "chat.py",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/chat.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "aethyxlm_evaluation_checkpoint_suite": {
+      "code_fingerprint": "6679a614c8cb029595cb0f5499a6d659af46d4cbdf63b6e20d5c434549ff3d5f",
+      "label": "checkpoint_suite.py",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/evaluation/checkpoint_suite.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "aethyxlm_model_gpt_gpt": {
+      "code_fingerprint": "773cdf9a914e996b30d3c55ed4f4d9ee9fd6bd633401397443abaedb38ed3c1d",
+      "label": "GPT",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/model/gpt.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "aethyxlm_model_transformer_block_transformerblock": {
+      "code_fingerprint": "5ef4ee4c84a264131ee5ec9e0426a40aa43f2b8d980b7d7bf810b4f6bf465bb3",
+      "label": "TransformerBlock",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/model/transformer_block.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "aethyxlm_scripts_run_scaling_pilot": {
+      "code_fingerprint": "ec5f6c2712687accfd32fae32052a5cab6968afdc3b518fe982f2184c0e5c0d0",
+      "label": "run_scaling_pilot.py",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/scripts/run_scaling_pilot.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "aethyxlm_training_trainer_trainer": {
+      "code_fingerprint": "aa504c1ce482056bbb43dee237b0a4004ab3557c7e57a5d1075ba6bdb72c10a9",
+      "label": "Trainer",
+      "last": "2026-08-12T12:51:49.504259+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-12T12:51:49.504259+00:00",
+          "outcome": "useful",
+          "q": "Why does GPT connect the model architecture, context adapters, training pipeline, evaluation, inference and scaling experiments?"
+        }
+      ],
+      "score": 0.997093797,
+      "source_file": "AethyxLM/training/trainer.py",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
   "version": 1
 }
