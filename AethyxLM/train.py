@@ -562,6 +562,7 @@ def main():
             )
         ),
         run_id=checkpoint_config.get('run_id'),
+        checkpoint_backup=checkpoint_config.get('backup'),
         generate_interval=train_config.get('generate_interval', 1000),
         device=device,
     )

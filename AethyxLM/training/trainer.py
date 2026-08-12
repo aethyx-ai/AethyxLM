@@ -37,6 +37,7 @@ from model.config import CONTEXT_LENGTH
 from training.loss import LanguageModelLoss
 from training.optimizer import create_optimizer
 from training.scheduler import get_cosine_schedule_with_warmup
+from training.checkpoint_backup import create_checkpoint_backup
 from tracking import JsonlExperimentTracker
 
 
@@ -96,6 +97,7 @@ class Trainer:
         milestone_dir: Optional[str] = None,
         metrics_file: Optional[str] = None,
         run_id: Optional[str] = None,
+        checkpoint_backup: Optional[dict] = None,
     ):
         self.model = model
         self.is_distributed = dist.is_available() and dist.is_initialized()
@@ -171,6 +173,11 @@ class Trainer:
         # Create directories
         self.checkpoint_dir = Path(checkpoint_dir).expanduser().resolve()
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_backup = (
+            create_checkpoint_backup(checkpoint_backup, self.checkpoint_dir)
+            if self.is_main_process
+            else None
+        )
         self.milestone_dir = Path(
             milestone_dir or self.checkpoint_dir / "milestones"
         ).expanduser().resolve()
@@ -466,6 +473,21 @@ class Trainer:
                 self._track("milestone_saved", path=str(milestone_path))
             self._track("checkpoint_saved", path=str(step_path))
             self._rotate_checkpoints()
+            self._backup_checkpoint(step_path)
+        elif force:
+            self._backup_checkpoint(latest_path)
+
+    def _backup_checkpoint(self, checkpoint_path: Path):
+        backup = getattr(self, "checkpoint_backup", None)
+        if backup is None:
+            return
+        uploaded = backup.upload(checkpoint_path, self.step)
+        if uploaded:
+            self._track(
+                "checkpoint_backed_up",
+                path=str(checkpoint_path),
+                destination=backup.handle,
+            )
 
     @staticmethod
     def _atomic_torch_save(checkpoint: dict, path: Path):
