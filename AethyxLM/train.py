@@ -449,7 +449,6 @@ def main():
             )
             print(f"Val tokens: {len(val_ds._data):,}")
             # Verify .bin files exist and non-empty
-            import os
             for f in [train_file, val_file if val_file.exists() else train_file]:
                 bin_f = str(Path(f).with_suffix('.bin'))
                 size = os.path.getsize(bin_f)
