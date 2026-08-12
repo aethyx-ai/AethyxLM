@@ -1,0 +1,20 @@
+{
+    "<PAD>": 0,
+    "<UNK>": 1,
+    "<BOS>": 2,
+    "<EOS>": 3,
+    "!": 4,
+    ".": 5,
+    "aethyx": 6,
+    "first": 7,
+    "hello": 8,
+    "is": 9,
+    "ishaan": 10,
+    "labs": 11,
+    "the": 12,
+    "this": 13,
+    "to": 14,
+    "tokenizer": 15,
+    "welcome": 16,
+    "world": 17
+}

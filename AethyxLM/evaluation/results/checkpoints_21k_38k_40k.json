@@ -1,0 +1,878 @@
+{
+  "created_at": "2026-08-12T13:16:24.822269+00:00",
+  "warning": "Generation repetition metrics are deterministic diagnostics, not a substitute for human or benchmark-based coherence judgments.",
+  "checkpoints": [
+    {
+      "path": "D:\\CODING\\AETHYXLabs\\AethyxLM\\checkpoints\\checkpoint_step_21000.pt",
+      "step": 21000,
+      "tokens_seen": 131072000,
+      "best_val_loss": 2.867888240814209,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.83581885099411,
+            "perplexity": 17.044351371757053,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.7991293907165526,
+            "perplexity": 44.66228416305126,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.7192704558372496,
+            "perplexity": 15.169251568236225,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.4599100708961488,
+            "perplexity": 11.70375898409673,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 2.458117628097534,
+            "perplexity": 11.682799455578595,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.815128469467163,
+            "perplexity": 6.141865168908835,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 2.1777692437171936,
+            "perplexity": 8.826594299916927,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 2.198400449752808,
+            "perplexity": 9.010589076230518,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.5293785989284516,
+            "perplexity": 4.6153079737189096,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 2.2466141819953918,
+            "perplexity": 9.455666410796402,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.783500015735626,
+            "perplexity": 16.17553662016584,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 2.206794464588165,
+            "perplexity": 9.086542425412656,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 2.3495577573776245,
+            "perplexity": 10.480933584100464,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.575108587741852,
+            "perplexity": 13.132743135988232,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 5.422290277481079,
+            "perplexity": 226.39704123215833,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.838159510672093,
+        "weighted_perplexity": 17.084293124539705
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "it is a diversity of the world.\nThe diversity of the world is the most common way to describe the world's natural resources. It is the most common way to describe the world's natural resources and the world's natural resources. It is the most common way to describe the",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.359375,
+          "repeated_4gram_ratio": 0.4426229508196721
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "ाचार कराया गया है।",
+          "finish_reason": "eos",
+          "tokens": 12,
+          "unique_token_ratio": 0.6666666666666666,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ের প্রথম বিশ্বের স্থানীয় স্থাপন করেছেন।",
+          "finish_reason": "eos",
+          "tokens": 31,
+          "unique_token_ratio": 0.6451612903225806,
+          "repeated_4gram_ratio": 0.03571428571428571
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "14 × 3 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.078125,
+          "repeated_4gram_ratio": 0.8852459016393442
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    {
+      "path": "D:\\CODING\\AETHYXLabs\\AethyxLM\\checkpoints\\checkpoint_step_38000.pt",
+      "step": 38000,
+      "tokens_seen": 335872000,
+      "best_val_loss": 2.5897665786743165,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.5699090123176576,
+            "perplexity": 13.064635665933546,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.4385141015052794,
+            "perplexity": 31.1406519258202,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.4246713638305666,
+            "perplexity": 11.298515708160494,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.2588858723640444,
+            "perplexity": 9.572418327727986,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 2.0572569489479067,
+            "perplexity": 7.824477405433803,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.6026133596897125,
+            "perplexity": 4.965993408154536,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 1.909267044067383,
+            "perplexity": 6.748140895551845,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 2.038226914405823,
+            "perplexity": 7.676985172349911,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.4294957876205445,
+            "perplexity": 4.176592771147,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 1.9428501904010773,
+            "perplexity": 6.978613027733586,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.515083611011505,
+            "perplexity": 12.367642807008558,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 2.0008389830589293,
+            "perplexity": 7.395257993097411,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 1.9972335636615752,
+            "perplexity": 7.3686429944276925,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.391639602184296,
+            "perplexity": 10.931402408917231,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 5.103278112411499,
+            "perplexity": 164.56047180518854,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.556588106870651,
+        "weighted_perplexity": 12.891756896784006
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "it is a state of the world. It is a state of the world, and it is a state of the world. It is a state of the world, and it is a state of the world. It is a state of the world, and it is a state of the world. It is a state of",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.171875,
+          "repeated_4gram_ratio": 0.7704918032786885
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "है।",
+          "finish_reason": "eos",
+          "tokens": 2,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ের বিষয়ে প্রতিষ্ঠানের জন্য স্থাপন করেছেন।",
+          "finish_reason": "eos",
+          "tokens": 31,
+          "unique_token_ratio": 0.6774193548387096,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "24\n\nStep 1: Solve the equation: 24 × 27 = 24\n\nStep 2: Solve the equation: 24 × 27 = 24\n\nStep 3: Solve the equation: 24 × 27 = 24\n\nStep 4:",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.296875,
+          "repeated_4gram_ratio": 0.5245901639344263
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    {
+      "path": "D:\\CODING\\AETHYXLabs\\AethyxLM\\checkpoints\\checkpoint_step_39000.pt",
+      "step": 39000,
+      "tokens_seen": 352256000,
+      "best_val_loss": 2.5823279428482055,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.592427384853363,
+            "perplexity": 13.362167391500222,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.485895276069641,
+            "perplexity": 32.651646265838416,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.4513174295425415,
+            "perplexity": 11.60362361044484,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.2766153216362,
+            "perplexity": 9.743645428806754,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 2.070633852481842,
+            "perplexity": 7.929847878961313,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.5983290791511535,
+            "perplexity": 4.944763209777689,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 1.9313327491283416,
+            "perplexity": 6.898698351713337,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 2.0193572998046876,
+            "perplexity": 7.533481607324838,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.3838294446468353,
+            "perplexity": 3.9901524757561186,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 1.9381249308586121,
+            "perplexity": 6.945715056868843,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.521601152420044,
+            "perplexity": 12.448512681238247,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 1.9762454211711884,
+            "perplexity": 7.215600521830783,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 2.0093195855617525,
+            "perplexity": 7.4582409256699975,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.405630910396576,
+            "perplexity": 11.085421984366075,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 5.176301002502441,
+            "perplexity": 177.02677680257582,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.5756214569807048,
+        "weighted_perplexity": 13.13948024344435
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "it is a diverse country.\nThe United States has a population of about 1,000 people in the world. The United States has a population of 1,000 people in the world. The United States has a population of 1,000 people in the world. The United States has a population of 1,000",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.359375,
+          "repeated_4gram_ratio": 0.5409836065573771
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "है।",
+          "finish_reason": "eos",
+          "tokens": 2,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ের সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সাথে সা",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.078125,
+          "repeated_4gram_ratio": 0.9016393442622951
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "24\n\nStep 1: Identify the largest possible combination of the largest possible combination of the largest possible combination of the largest possible combination of the largest combination of the largest combination of the largest combination of the largest combination of the largest",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.25,
+          "repeated_4gram_ratio": 0.6721311475409836
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    {
+      "path": "D:\\CODING\\AETHYXLabs\\AethyxLM\\checkpoints\\checkpoint_step_40000.pt",
+      "step": 40000,
+      "tokens_seen": 368640000,
+      "best_val_loss": 2.5787332963943483,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.587749457359314,
+            "perplexity": 13.299806115763573,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.4362712025642397,
+            "perplexity": 31.07088486007892,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.4474903345108032,
+            "perplexity": 11.559300309017488,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.258958172798157,
+            "perplexity": 9.573110442748394,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 2.045061469078064,
+            "perplexity": 7.729633656761825,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.6499751806259155,
+            "perplexity": 5.206850594803408,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 1.872551017999649,
+            "perplexity": 6.504869290072093,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 2.0318094730377196,
+            "perplexity": 7.627876315267702,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.3863370954990386,
+            "perplexity": 4.000170941169098,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 1.9381084084510802,
+            "perplexity": 6.945600297882122,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.49853001832962,
+            "perplexity": 12.164599073682025,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 1.9456007480621338,
+            "perplexity": 6.997834528064602,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 2.0345119714736937,
+            "perplexity": 7.648518519278188,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.4390281438827515,
+            "perplexity": 11.461896014378937,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 5.1262267351150514,
+            "perplexity": 168.38057336948395,
+            "tokens": 10240,
+            "batches": 20,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.559874317407609,
+        "weighted_perplexity": 12.934191610651704
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "of its inherent challenges and challenges.\n\n##### Example: Consider the following system of equations:\n\n1. **Equation 1:** If we substitute the known values into the equation:\n2. **Equation 2:",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.609375,
+          "repeated_4gram_ratio": 0.06557377049180328
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "है।",
+          "finish_reason": "eos",
+          "tokens": 2,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ের বিরুদ্ধেই কাজ করেছেন।",
+          "finish_reason": "eos",
+          "tokens": 20,
+          "unique_token_ratio": 0.8,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "2 × 3 = 6\n\nStep 1: Divide the number of pounds by the number of pounds by the number of pounds by the number of pounds.\n\nStep 2: Divide the number of pounds by the number of pound",
+          "finish_reason": "length",
+          "tokens": 64,
+          "unique_token_ratio": 0.34375,
+          "repeated_4gram_ratio": 0.5081967213114754
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 2,
+          "accuracy": 0.0
+        }
+      ]
+    }
+  ]
+}

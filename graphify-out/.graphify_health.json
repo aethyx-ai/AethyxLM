@@ -1,0 +1,193 @@
+{
+  "node_count": 932,
+  "unverified_node_count": 0,
+  "raw_edge_count": 2268,
+  "non_object_edges": 0,
+  "missing_endpoint_edges": 0,
+  "dangling_endpoint_edges": 386,
+  "self_loop_edges": 0,
+  "valid_candidate_edges": 1882,
+  "exact_duplicate_edges": 20,
+  "directed_unique_endpoint_pairs": 1805,
+  "directed_same_endpoint_collapsed_edges": 77,
+  "undirected_unique_endpoint_pairs": 1804,
+  "undirected_same_endpoint_collapsed_edges": 78,
+  "same_endpoint_group_count": 62,
+  "relation_variant_groups": 29,
+  "source_file_variant_groups": 0,
+  "source_location_variant_groups": 5,
+  "context_variant_groups": 20,
+  "post_build_graph_type": "Graph",
+  "post_build_node_count": 932,
+  "post_build_edge_count": 1814,
+  "post_build_error": "",
+  "producer_suppression": {
+    "path": "C:\\Users\\Ishaa\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\graphify\\extract.py",
+    "total_sites": 11,
+    "sites": [
+      {
+        "line": 1125,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 1391,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 1393,
+        "name": "seen_doc_refs",
+        "tuple_arity": 0,
+        "sample": "seen_doc_refs: set[str] = set()"
+      },
+      {
+        "line": 1753,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2243,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 2412,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 3818,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 3926,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 4005,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 4520,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 4521,
+        "name": "seen_edges",
+        "tuple_arity": 4,
+        "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+      }
+    ],
+    "error": ""
+  },
+  "examples": [
+    {
+      "source": "aethyxlm_model_context_adapter_latentcontextadapter_forward",
+      "target": "aethyxlm_model_context_adapter_py_tensor",
+      "edge_count": 4,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AethyxLM/model/context_adapter.py"
+      ],
+      "source_locations": [
+        "L60"
+      ],
+      "contexts": [
+        "generic_arg",
+        "parameter_type",
+        "return_type"
+      ]
+    },
+    {
+      "source": "aethyxlm_model_context_memory_contextmemorybank_init",
+      "target": "aethyxlm_model_context_memory_py_tensor",
+      "edge_count": 4,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AethyxLM/model/context_memory.py"
+      ],
+      "source_locations": [
+        "L26"
+      ],
+      "contexts": [
+        "generic_arg",
+        "parameter_type"
+      ]
+    },
+    {
+      "source": "aethyxlm_model_modules_rope_rotaryembedding_forward",
+      "target": "aethyxlm_model_modules_rope_py_tensor",
+      "edge_count": 4,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AethyxLM/model/modules/rope.py"
+      ],
+      "source_locations": [
+        "L91"
+      ],
+      "contexts": [
+        "generic_arg",
+        "parameter_type"
+      ]
+    },
+    {
+      "source": "aethyxlm_model_modules_rope_apply_rotary_pos_emb",
+      "target": "aethyxlm_model_modules_rope_py_tensor",
+      "edge_count": 4,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AethyxLM/model/modules/rope.py"
+      ],
+      "source_locations": [
+        "L133"
+      ],
+      "contexts": [
+        "parameter_type",
+        "return_type"
+      ]
+    },
+    {
+      "source": "aethyxlm_training_milestones_archive_milestone",
+      "target": "aethyxlm_training_milestones_py_path",
+      "edge_count": 4,
+      "relations": [
+        "calls",
+        "references"
+      ],
+      "source_files": [
+        "AethyxLM/training/milestones.py"
+      ],
+      "source_locations": [
+        "L44",
+        "L50"
+      ],
+      "contexts": [
+        "call",
+        "parameter_type",
+        "return_type"
+      ]
+    }
+  ]
+}
