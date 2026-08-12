@@ -521,6 +521,25 @@ def main():
     # Create trainer (only on main process for logging/checkpointing)
     if is_main_process:
         print("Initializing trainer...")
+    checkpoint_dir = resolve_project_path(checkpoint_config['checkpoint_dir'])
+    checkpoint_backup = checkpoint_config.get('backup')
+    if (
+        checkpoint_backup is None
+        and str(checkpoint_dir).startswith('/kaggle/working/aethyxlm_output/')
+    ):
+        # Backward compatibility for an already-open production notebook whose
+        # cells predate the explicit backup block now stored in the repository.
+        checkpoint_backup = {
+            'enabled': True,
+            'provider': 'kaggle_dataset',
+            'handle': os.environ.get(
+                'AETHYX_KAGGLE_BACKUP_HANDLE',
+                'aethyx/aethyxlm-live-checkpoints',
+            ),
+            'required': True,
+            'retries': 3,
+        }
+
     trainer = Trainer(
         model=model,
         train_dataloader=train_loader,
@@ -542,7 +561,7 @@ def main():
         tokenizer_sha256=(tokenizer.sha256 if is_main_process else None),
         eval_batches=train_config.get('eval_batches'),
         tokenizer_path=str(tokenizer_path),
-        checkpoint_dir=str(resolve_project_path(checkpoint_config['checkpoint_dir'])),
+        checkpoint_dir=str(checkpoint_dir),
         log_dir=str(resolve_project_path(checkpoint_config.get('log_dir', 'logs'))),
         tensorboard_dir=str(
             resolve_project_path(checkpoint_config.get('tensorboard_dir', 'logs/tensorboard'))
@@ -562,7 +581,7 @@ def main():
             )
         ),
         run_id=checkpoint_config.get('run_id'),
-        checkpoint_backup=checkpoint_config.get('backup'),
+        checkpoint_backup=checkpoint_backup,
         generate_interval=train_config.get('generate_interval', 1000),
         device=device,
     )
