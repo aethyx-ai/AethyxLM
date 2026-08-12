@@ -173,38 +173,19 @@ def download_tinystories(data_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train AethyxLM")
+    parser = argparse.ArgumentParser(description="Train AethyxLM on Kaggle")
     parser.add_argument('--config', type=str, default='configs/train_config_modern.json',
                         help='Path to training config JSON')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume from')
-    parser.add_argument('--device', type=str, choices=('cuda', 'cpu', 'xla'), default=None,
-                        help='Device to train on (cuda/cpu/xla)')
+    parser.add_argument('--device', type=str, default=None,
+                        help='Device to train on (cuda/cpu)')
     parser.add_argument('--ddp', action='store_true',
                         help='Use Distributed Data Parallel (DDP)')
     args = parser.parse_args()
     
     # Setup DDP
     rank, world_size, local_rank, device, is_ddp = setup_ddp()
-    if args.device == 'xla':
-        if is_ddp:
-            raise RuntimeError('--device xla currently supports one TPU device; do not combine it with --ddp')
-        try:
-            import torch_xla
-            import torch_xla.backends
-        except ImportError as error:
-            raise RuntimeError(
-                'PyTorch/XLA is required for --device xla. Use a Colab TPU runtime '
-                'with torch_xla installed.'
-            ) from error
-        device = str(torch_xla.device())
-        torch_xla.backends.set_mat_mul_precision('high')
-    elif args.device is not None:
-        if is_ddp:
-            raise RuntimeError('An explicit --device cannot be combined with --ddp')
-        if args.device == 'cuda' and not torch.cuda.is_available():
-            raise RuntimeError('CUDA was requested but is not available')
-        device = args.device
     if is_ddp:
         print(f"Running with DDP: rank={rank}, world_size={world_size}")
     
@@ -242,7 +223,7 @@ def main():
     # Print config (only on main process)
     if is_main_process:
         print("=" * 60)
-        print("AethyxLM Training Configuration")
+        print("AethyxLM Training Configuration (Kaggle)")
         print("=" * 60)
         print(f"Model: {model_config['num_layers']} layers, {model_config['embed_dim']} dim, {model_config['num_heads']} heads")
         print(f"Context: {model_config['context_length']}, Vocab: {model_config['vocab_size']}")
@@ -283,13 +264,8 @@ def main():
         print("Creating model...")
     model = GPT(vocab_size=actual_vocab_size, config=model_config)
     model.to(device)
-    if str(device).startswith('xla'):
-        # XLA device transfer does not guarantee preservation of shared views.
-        model.lm_head.weight = model.token_embedding.weight
 
     if train_config.get('torch_compile', False):
-        if str(device).startswith('xla'):
-            raise RuntimeError('Set torch_compile=false for the current single-device XLA path')
         if not hasattr(model, 'compile'):
             raise RuntimeError("torch.compile requires a newer PyTorch version")
         if is_main_process:
@@ -522,7 +498,7 @@ def main():
         sampler=train_sampler,
         num_workers=data_config.get('num_workers', 2),
         drop_last=True,
-        pin_memory=str(device).startswith('cuda'),
+        pin_memory=True,
         worker_init_fn=worker_init_fn if data_config.get('num_workers', 0) > 0 else None,
     )
     
@@ -533,7 +509,7 @@ def main():
         sampler=val_sampler,
         num_workers=data_config.get('num_workers', 2),
         drop_last=True,
-        pin_memory=str(device).startswith('cuda'),
+        pin_memory=True,
         worker_init_fn=worker_init_fn if data_config.get('num_workers', 0) > 0 else None,
     )
     
@@ -553,7 +529,7 @@ def main():
         max_steps=train_config['max_steps'],
         min_lr_ratio=train_config['min_lr_ratio'],
         grad_accum_steps=train_config['grad_accum_steps'],
-        use_amp=train_config['use_amp'] and str(device).startswith(('cuda', 'xla')),
+        use_amp=train_config['use_amp'] and device.startswith('cuda'),
         amp_dtype=train_config.get('amp_dtype', 'auto'),
         fused_optimizer=train_config.get('fused_optimizer', False),
         z_loss_coefficient=train_config.get('z_loss_coefficient', 0.0),

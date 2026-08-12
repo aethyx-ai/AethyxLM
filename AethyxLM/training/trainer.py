@@ -108,17 +108,10 @@ class Trainer:
         self.warmup_steps = warmup_steps
         self.max_steps = max_steps
         self.grad_accum_steps = grad_accum_steps
-        requested_device = str(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.is_xla = requested_device.startswith("xla")
-        self.is_cuda = requested_device.startswith("cuda")
-        self.use_amp = use_amp and (self.is_cuda or self.is_xla)
+        self.use_amp = use_amp and torch.cuda.is_available()
         if amp_dtype not in {"auto", "float16", "bfloat16"}:
             raise ValueError("amp_dtype must be auto, float16, or bfloat16")
-        if self.is_xla and amp_dtype == "float16":
-            raise ValueError("TPU/XLA mixed precision requires bfloat16 or auto")
-        bf16_supported = self.is_xla or (
-            self.is_cuda and torch.cuda.is_bf16_supported()
-        )
+        bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
         self.amp_dtype = (
             torch.bfloat16
             if amp_dtype == "bfloat16" or (amp_dtype == "auto" and bf16_supported)
@@ -140,11 +133,8 @@ class Trainer:
         if self.eval_interval <= 0:
             raise ValueError("eval_interval must be positive")
         
-        self.device = requested_device
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-        if self.is_xla and hasattr(self.model, "lm_head") and hasattr(self.model, "token_embedding"):
-            # PyTorch/XLA requires shared parameters to be tied after device transfer.
-            self.model.lm_head.weight = self.model.token_embedding.weight
         
         # Loss
         self.criterion = LanguageModelLoss(z_loss_coefficient=z_loss_coefficient)
@@ -240,28 +230,6 @@ class Trainer:
     def _raw_model(self):
         return self.model.module if hasattr(self.model, "module") else self.model
 
-    def _device_memory_gb(self) -> float:
-        if getattr(self, "is_xla", False):
-            import torch_xla.core.xla_model as xm
-
-            info = xm.get_memory_info(torch.device(self.device))
-            used = info.get("bytes_used")
-            if used is not None:
-                return float(used) / 1e9
-            total = float(info.get("kb_total", 0)) * 1024
-            free = float(info.get("kb_free", 0)) * 1024
-            return max(0.0, total - free) / 1e9
-        if str(self.device).startswith("cuda"):
-            return torch.cuda.memory_allocated() / 1e9
-        return 0.0
-
-    def _xla_rng_state(self):
-        if not getattr(self, "is_xla", False):
-            return None
-        import torch_xla.core.xla_model as xm
-
-        return int(xm.get_rng_state(torch.device(self.device)))
-
     def train_step(self, batch) -> float:
         input_ids, targets = batch
         active_context = self._active_context_length()
@@ -272,8 +240,7 @@ class Trainer:
         targets = targets.to(self.device)
         
         if self.use_amp:
-            device_type = "xla" if self.is_xla else "cuda"
-            with torch.amp.autocast(device_type, dtype=self.amp_dtype):
+            with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
                 loss = loss / self.grad_accum_steps
@@ -283,8 +250,7 @@ class Trainer:
             loss = loss / self.grad_accum_steps
         
         self.scaler.scale(loss).backward()
-        unscaled_loss = loss.detach() * self.grad_accum_steps
-        return unscaled_loss if self.is_xla else unscaled_loss.item()
+        return loss.item() * self.grad_accum_steps
 
     def _active_context_length(self) -> int:
         """Return the curriculum context length for the current step."""
@@ -300,14 +266,8 @@ class Trainer:
     def optimizer_step(self) -> float:
         self.scaler.unscale_(self.optimizer)
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-        if self.is_xla:
-            self.optimizer.step()
-            import torch_xla
-
-            torch_xla.sync()
-        else:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
         self.scheduler.step()
         self.optimizer.zero_grad()
         return grad_norm
@@ -326,8 +286,7 @@ class Trainer:
             targets = targets.to(self.device)
             
             if self.use_amp:
-                device_type = "xla" if self.is_xla else "cuda"
-                with torch.amp.autocast(device_type, dtype=self.amp_dtype):
+                with torch.amp.autocast("cuda", dtype=self.amp_dtype):
                     logits = self.model(input_ids)
                     loss = self.criterion(logits, targets)
             else:
@@ -443,7 +402,6 @@ class Trainer:
                 "numpy": __import__('numpy').random.get_state(),
                 "torch": torch.get_rng_state(),
                 "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-                "xla": self._xla_rng_state(),
             },
             "config": {
                 "tokenizer_sha256": getattr(self, "tokenizer_sha256", None),
@@ -509,18 +467,12 @@ class Trainer:
             self._track("checkpoint_saved", path=str(step_path))
             self._rotate_checkpoints()
 
-    def _atomic_torch_save(self, checkpoint: dict, path: Path):
+    @staticmethod
+    def _atomic_torch_save(checkpoint: dict, path: Path):
         """Write a checkpoint completely before replacing its public path."""
         temporary = path.with_suffix(path.suffix + ".tmp")
         try:
-            if getattr(self, "is_xla", False):
-                import torch_xla.core.xla_model as xm
-
-                # xm.save transfers nested XLA tensors to CPU, keeping checkpoints
-                # loadable on CUDA, CPU, and future Colab TPU sessions.
-                xm.save(checkpoint, temporary, master_only=False)
-            else:
-                torch.save(checkpoint, temporary)
+            torch.save(checkpoint, temporary)
             os.replace(temporary, path)
         finally:
             if temporary.exists():
@@ -543,8 +495,7 @@ class Trainer:
 
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
-        map_location = "cpu" if getattr(self, "is_xla", False) else self.device
-        checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         saved_tokenizer = checkpoint.get("config", {}).get("tokenizer_sha256")
         if (
             saved_tokenizer
@@ -575,13 +526,6 @@ class Trainer:
             if torch.cuda.is_available() and checkpoint["rng_state"]["cuda"]:
                 torch.cuda.set_rng_state_all(
                     [state.cpu() for state in checkpoint["rng_state"]["cuda"]]
-                )
-            if getattr(self, "is_xla", False) and checkpoint["rng_state"].get("xla") is not None:
-                import torch_xla.core.xla_model as xm
-
-                xm.set_rng_state(
-                    int(checkpoint["rng_state"]["xla"]),
-                    torch.device(self.device),
                 )
         
         print(f"Loaded checkpoint from step {self.step}")
@@ -614,7 +558,6 @@ class Trainer:
         
         self.model.train()
         running_loss = 0.0
-        pending_xla_loss = None
         step_start_time = time.time()
         interval_tokens = 0
         interval_microbatches = 0
@@ -648,12 +591,7 @@ class Trainer:
                     )
                     with sync_context:
                         loss = self.train_step(batch)
-                    if getattr(self, "is_xla", False):
-                        pending_xla_loss = (
-                            loss if pending_xla_loss is None else pending_xla_loss + loss
-                        )
-                    else:
-                        running_loss += loss
+                    running_loss += loss
                     batch_tokens = getattr(
                         self,
                         "last_batch_tokens",
@@ -673,9 +611,6 @@ class Trainer:
                         continue
 
                     self.optimizer_step()
-                    if getattr(self, "is_xla", False):
-                        running_loss += float(pending_xla_loss.cpu())
-                        pending_xla_loss = None
                     microbatches_since_update = 0
                     # A step is one optimizer update, independent of accumulation.
                     self.step += 1
@@ -687,13 +622,12 @@ class Trainer:
                         avg_loss = running_loss / max(interval_microbatches, 1)
                         tokens_per_sec = interval_tokens / elapsed
                         
-                        device_memory_gb = self._device_memory_gb()
                         print(
                             f"Step {self.step}/{self.max_steps} | "
                             f"Loss: {avg_loss:.4f} | "
                             f"LR: {lr:.2e} | "
                             f"Tok/s: {tokens_per_sec:.0f} | "
-                            f"Device memory: {device_memory_gb:.2f}GB | "
+                            f"GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB | "
                             f"Time: {elapsed:.1f}s"
                         )
                         
@@ -702,13 +636,13 @@ class Trainer:
                             self.writer.add_scalar("train/lr", lr, self.step)
                             self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
                             self.writer.add_scalar("train/tokens_seen", self.tokens_seen, self.step)
-                            self.writer.add_scalar("train/device_mem_gb", device_memory_gb, self.step)
+                            self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
                         self._track(
                             "train_metrics",
                             loss=avg_loss,
                             learning_rate=lr,
                             tokens_per_second=tokens_per_sec,
-                            device_memory_gb=device_memory_gb,
+                            gpu_memory_gb=torch.cuda.memory_allocated() / 1e9,
                             context_length=self._active_context_length(),
                         )
                         
