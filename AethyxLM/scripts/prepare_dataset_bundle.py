@@ -104,6 +104,24 @@ def completed_output(source: dict, output_dir: Path) -> bool:
     )
 
 
+def remaining_output_bytes(bundle: dict, output_dir: Path) -> tuple[int, int]:
+    """Return (remaining, existing) bytes for manifest-owned uint16 binaries."""
+    remaining = 0
+    existing = 0
+    for source in bundle["sources"]:
+        target = source_target_tokens(source) * 2
+        present = 0
+        for suffix in ("train", "val"):
+            path = output_dir / f"{source['name']}_{suffix}.bin"
+            if path.is_file():
+                present += path.stat().st_size
+        # Do not let a corrupt/foreign oversized file hide required disk space.
+        credited = min(present, target)
+        existing += credited
+        remaining += target - credited
+    return remaining, existing
+
+
 def prepare_bundle(args):
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     if args.bundle not in manifest:
@@ -120,17 +138,20 @@ def prepare_bundle(args):
         return
     target_bytes = sum(source_target_tokens(source) * 2 for source in bundle["sources"])
     reserve_bytes = int(bundle.get("reserve_gb", 2.0) * 1024**3)
+    remaining_bytes, existing_bytes = remaining_output_bytes(bundle, output_dir)
     free_bytes = shutil.disk_usage(output_dir).free
-    if free_bytes < target_bytes + reserve_bytes:
+    if free_bytes < remaining_bytes + reserve_bytes:
         raise OSError(
-            f"Bundle needs {target_bytes / 1024**3:.2f} GiB plus "
+            f"Bundle has {existing_bytes / 1024**3:.2f} GiB prepared and needs "
+            f"{remaining_bytes / 1024**3:.2f} GiB more plus "
             f"{reserve_bytes / 1024**3:.2f} GiB reserve, but only "
             f"{free_bytes / 1024**3:.2f} GiB is free"
         )
 
     print(
         f"Preparing {args.bundle}: {len(bundle['sources'])} sources, "
-        f"maximum binary output {target_bytes / 1024**3:.2f} GiB"
+        f"maximum binary output {target_bytes / 1024**3:.2f} GiB; "
+        f"remaining {remaining_bytes / 1024**3:.2f} GiB"
     )
     for source in bundle["sources"]:
         if completed_output(source, output_dir):

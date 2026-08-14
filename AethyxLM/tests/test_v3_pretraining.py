@@ -3,7 +3,11 @@ from pathlib import Path
 
 import nbformat
 
-from scripts.prepare_dataset_bundle import source_target_tokens, validate_bundle
+from scripts.prepare_dataset_bundle import (
+    remaining_output_bytes,
+    source_target_tokens,
+    validate_bundle,
+)
 from scripts.source_filters import is_high_quality_code, normalize_text
 from tokenizer.tokenizer import AethyxTokenizer
 
@@ -25,6 +29,21 @@ def test_v3_manifest_is_exactly_eight_billion_tokens():
     assert "stack" not in names
     assert "finewiki" not in names
     assert "python_edu" not in names
+
+
+def test_resume_disk_preflight_credits_existing_binary_bytes(tmp_path):
+    bundle = {
+        "sources": [
+            {"name": "one", "target_tokens": 100},
+            {"name": "two", "target_tokens": 50},
+        ]
+    }
+    (tmp_path / "one_train.bin").write_bytes(b"x" * 120)
+    (tmp_path / "one_val.bin").write_bytes(b"x" * 20)
+    (tmp_path / "two_train.bin").write_bytes(b"x" * 200)  # capped at its target
+    remaining, existing = remaining_output_bytes(bundle, tmp_path)
+    assert existing == 240
+    assert remaining == 60
 
 
 def test_frozen_v3_tokenizer_and_heldout_benchmark():
