@@ -23,16 +23,51 @@ def resolve(path):
     return (ROOT / path).resolve() if not path.is_absolute() else path.resolve()
 
 
+def newest_sft_checkpoint(checkpoint_dir):
+    """Return the newest resumable SFT checkpoint, if one exists."""
+    checkpoint_dir = resolve(checkpoint_dir)
+    latest = checkpoint_dir / "checkpoint_latest.pt"
+    if latest.is_file():
+        return latest
+    numbered = []
+    for path in checkpoint_dir.glob("checkpoint_step_*.pt"):
+        try:
+            numbered.append((int(path.stem.rsplit("_", 1)[1]), path))
+        except ValueError:
+            continue
+    return max(numbered, default=(None, None))[1]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/sft_config.json")
     parser.add_argument("--base-checkpoint")
     parser.add_argument("--resume")
+    parser.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help="Resume checkpoint_latest.pt when present; otherwise start from the base model",
+    )
+    parser.add_argument(
+        "--force-prepare",
+        action="store_true",
+        help="Rebuild the streamed SFT data bundle before training",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
     config = json.loads(resolve(args.config).read_text(encoding="utf-8"))
     set_seed(int(config.get("seed", 42)))
+    data = config["data"]
+    train_path = resolve(data["train"])
+    validation_path = resolve(data["validation"])
+    if args.force_prepare or not (train_path.is_file() and validation_path.is_file()):
+        from scripts.prepare_sft_bundle import prepare_from_config
+
+        prepare_from_config(args.config, force=args.force_prepare)
+
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested, but this PyTorch build cannot access a GPU")
     tokenizer = AethyxTokenizer(resolve(config["tokenizer"]))
     base_checkpoint = resolve(args.base_checkpoint or config["base_checkpoint"])
     base = torch.load(base_checkpoint, map_location="cpu", weights_only=False)
@@ -50,12 +85,11 @@ def main():
     model.load_compatible_state_dict(state, strict=True)
     del base
 
-    data = config["data"]
     train_dataset = SFTDataset(
-        resolve(data["train"]), tokenizer, context_length=data["context_length"]
+        train_path, tokenizer, context_length=data["context_length"]
     )
     validation_dataset = SFTDataset(
-        resolve(data["validation"]), tokenizer, context_length=data["context_length"]
+        validation_path, tokenizer, context_length=data["context_length"]
     )
     train_loader = DataLoader(
         train_dataset,
@@ -107,8 +141,18 @@ def main():
         generate_interval=0,
         device=args.device,
     )
-    if args.resume:
-        trainer.load_checkpoint(str(resolve(args.resume)))
+    resume_path = resolve(args.resume) if args.resume else None
+    if args.auto_resume and resume_path is None:
+        resume_path = newest_sft_checkpoint(checkpoint["checkpoint_dir"])
+    if resume_path:
+        print(f"[RESUME] Loading {resume_path}")
+        trainer.load_checkpoint(str(resume_path))
+    else:
+        effective_batch = data["batch_size"] * training["grad_accum_steps"]
+        print(
+            f"[SFT] Starting from {base_checkpoint.name}; "
+            f"effective batch={effective_batch}, context={data['context_length']}"
+        )
     trainer.train()
 
 

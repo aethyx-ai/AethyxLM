@@ -1,0 +1,62 @@
+{
+  "seed": 42,
+  "base_checkpoint": "checkpoints/checkpoint_best.pt",
+  "tokenizer": "tokenizer/tokenizer.json",
+  "preparation": {
+    "validation_ratio": 0.02,
+    "min_chars": 20,
+    "max_chars": 8000,
+    "sources": [
+      {
+        "dataset": "HuggingFaceTB/smol-smoltalk",
+        "revision": "f73fe857d519ff6ac5af2ea67c4d3834da7b8bcc",
+        "split": "train",
+        "limit": 80000,
+        "shuffle_buffer": 20000,
+        "license": "Apache-2.0"
+      },
+      {
+        "dataset": "soketlabs/bhasha-sft",
+        "revision": "68073328969e5622e49479faa5f2b2e4ac18950f",
+        "subset": "indic",
+        "split": "train",
+        "limit": 20000,
+        "shuffle_buffer": 10000,
+        "license": "mixed: CC-BY-4.0 / Apache-2.0 / MIT; see source metadata"
+      }
+    ]
+  },
+  "data": {
+    "train": "data/sft/train.jsonl",
+    "validation": "data/sft/validation.jsonl",
+    "context_length": 512,
+    "batch_size": 2,
+    "num_workers": 0
+  },
+  "training": {
+    "learning_rate": 0.00002,
+    "weight_decay": 0.01,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "grad_clip": 1.0,
+    "warmup_steps": 200,
+    "max_steps": 5000,
+    "min_lr_ratio": 0.1,
+    "grad_accum_steps": 16,
+    "use_amp": true,
+    "amp_dtype": "float16",
+    "fused_optimizer": true,
+    "eval_batches": 25
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints/sft",
+    "milestone_dir": "checkpoints/sft/milestones",
+    "milestone_interval": 1000,
+    "metrics_file": "logs/sft/metrics.jsonl",
+    "log_dir": "logs/sft",
+    "tensorboard_dir": "logs/sft/tensorboard",
+    "log_interval": 20,
+    "eval_interval": 250,
+    "save_interval": 500
+  }
+}

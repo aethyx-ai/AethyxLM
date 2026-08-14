@@ -1,0 +1,182 @@
+{
+  "created_at": "2026-08-14T12:34:28.627320+00:00",
+  "warning": "Generation repetition metrics are deterministic diagnostics, not a substitute for human or benchmark-based coherence judgments.",
+  "checkpoints": [
+    {
+      "path": "checkpoints/checkpoint_step_100000.pt",
+      "step": 100000,
+      "tokens_seen": 1351680000,
+      "best_val_loss": 2.4429631662368774,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.372725009918213,
+            "perplexity": 10.726582537986813,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.2379508018493652,
+            "perplexity": 25.481451666136007,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.3438377380371094,
+            "perplexity": 10.421153575688102,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.09665846824646,
+            "perplexity": 8.138927936811788,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 1.8335107564926147,
+            "perplexity": 6.255810779191199,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.482773780822754,
+            "perplexity": 4.405147664394409,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 1.7263720035552979,
+            "perplexity": 5.620226713404042,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 1.891597032546997,
+            "perplexity": 6.629948474155588,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.1955002546310425,
+            "perplexity": 3.3052108040096417,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 1.863662838935852,
+            "perplexity": 6.44730902892593,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.3884925842285156,
+            "perplexity": 10.897055163300978,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 1.8146007061004639,
+            "perplexity": 6.138624572678685,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 1.8603339195251465,
+            "perplexity": 6.425882140731931,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.2691006660461426,
+            "perplexity": 9.670699713451818,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 4.983953952789307,
+            "perplexity": 146.05071914547958,
+            "tokens": 512,
+            "batches": 1,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.3917008870840073,
+        "weighted_perplexity": 10.93207235934628
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "of their richness, culture and language, and their physical and emotional status.\nIt's a long-term legacy in the",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.875,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "है। यही वजह से पहले दूसरे रिपोर्ट पर प्रशासन ने सभी सरका",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.8125,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ে স্বাধীনতার বিষয়গুলোকে নিয়ে দেখছেন। র",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.84375,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "28.\n\nSolution: Begin by identifying the length of each side, which is 10 × 3 = 28. Since",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.90625,
+          "repeated_4gram_ratio": 0.0
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        }
+      ]
+    }
+  ]
+}

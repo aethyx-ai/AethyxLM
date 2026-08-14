@@ -94,12 +94,16 @@ def evaluate_registry(
 
 
 def evaluate_generation(model, tokenizer, prompts=DEFAULT_PROMPTS, max_new_tokens=64):
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
     sampling = SamplingConfig(
         max_new_tokens=max_new_tokens,
-        temperature=0.0,
-        top_k=0,
-        top_p=1.0,
-        repetition_penalty=1.05,
+        temperature=0.8,
+        top_k=40,
+        top_p=0.9,
+        repetition_penalty=1.18,
+        no_repeat_ngram_size=4,
     )
     results = []
     for prompt in prompts:

@@ -191,10 +191,11 @@ def generate(
     prompt: str,
     max_new: int = 200,
     temperature: float = 0.8,
-    top_k: int = 50,
-    top_p: float = 0.95,
+    top_k: int = 40,
+    top_p: float = 0.9,
     min_p: float = 0.0,
-    repetition_penalty: float = 1.05,
+    repetition_penalty: float = 1.18,
+    no_repeat_ngram_size: int = 4,
     on_text=None,
 ) -> str:
     """Compatibility wrapper around the reusable inference engine."""
@@ -209,6 +210,7 @@ def generate(
             top_p=top_p,
             min_p=min_p,
             repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
         ),
         stop_strings=("\nUser:", "User:", "\nAethyx:", "Aethyx:"),
         on_text=on_text,
@@ -251,10 +253,11 @@ def interactive_chat(
     top_p: float,
     min_p: float,
     repetition_penalty: float,
+    no_repeat_ngram_size: int,
     max_new: int,
     stream: bool,
 ):
-    print("\nChat started. Commands: /temp, /topk, /max, /clear, /help, /quit")
+    print("\nChat started. Commands: /temp, /topk, /ngram, /max, /clear, /help, /quit")
     print(
         "Note: this is a pretrained base-model checkpoint; conversational quality "
         "depends on later instruction tuning."
@@ -289,6 +292,11 @@ def interactive_chat(
                     if top_k < 0:
                         raise ValueError
                     print(f"[Top-k = {top_k}]")
+                elif command == "/ngram" and value is not None:
+                    no_repeat_ngram_size = int(value)
+                    if no_repeat_ngram_size < 0:
+                        raise ValueError
+                    print(f"[No-repeat n-gram size = {no_repeat_ngram_size}]")
                 elif command == "/max" and value is not None:
                     max_new = int(value)
                     if max_new <= 0:
@@ -298,7 +306,10 @@ def interactive_chat(
                     history = ""
                     print("[Context cleared]")
                 elif command == "/help":
-                    print("/temp <number>, /topk <integer>, /max <integer>, /clear, /quit")
+                    print(
+                        "/temp <number>, /topk <integer>, /ngram <integer>, "
+                        "/max <integer>, /clear, /quit"
+                    )
                 else:
                     print("Unknown or incomplete command. Type /help.")
             except ValueError:
@@ -319,6 +330,7 @@ def interactive_chat(
                 top_p=top_p,
                 min_p=min_p,
                 repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
                 on_text=stream_write if stream else None,
             )
             if stream:
@@ -365,10 +377,11 @@ def parse_args():
         help="Run one raw completion and exit instead of opening interactive chat",
     )
     parser.add_argument("--temperature", type=float, default=0.8)
-    parser.add_argument("--top-k", type=int, default=50)
-    parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--top-k", type=int, default=40)
+    parser.add_argument("--top-p", type=float, default=0.9)
     parser.add_argument("--min-p", type=float, default=0.0)
-    parser.add_argument("--repetition-penalty", type=float, default=1.05)
+    parser.add_argument("--repetition-penalty", type=float, default=1.18)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=4)
     parser.add_argument("--max-new", type=int, default=200)
     parser.add_argument("--stream", action="store_true")
     return parser.parse_args()
@@ -408,6 +421,7 @@ def main():
             top_p=args.top_p,
             min_p=args.min_p,
             repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
             on_text=callback,
         )
         if args.stream:
@@ -424,6 +438,7 @@ def main():
         top_p=args.top_p,
         min_p=args.min_p,
         repetition_penalty=args.repetition_penalty,
+        no_repeat_ngram_size=args.no_repeat_ngram_size,
         max_new=args.max_new,
         stream=args.stream,
     )

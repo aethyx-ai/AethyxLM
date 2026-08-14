@@ -4,10 +4,55 @@ import torch
 from torch.utils.data import DataLoader
 
 from model.gpt import GPT
+from scripts import prepare_sft_bundle
 from scripts.prepare_sft_data import normalize_record, stable_key
 from tokenizer.tokenizer import AethyxTokenizer
 from training.sft_dataset import SFTDataset, encode_conversation
 from training.trainer import Trainer
+
+
+def test_streamed_sft_bundle_is_bounded_and_split(tmp_path, monkeypatch):
+    config_path = tmp_path / "sft.json"
+    train_path = tmp_path / "data/train.jsonl"
+    validation_path = tmp_path / "data/validation.jsonl"
+    config_path.write_text(
+        json.dumps(
+            {
+                "seed": 42,
+                "data": {
+                    "train": str(train_path),
+                    "validation": str(validation_path),
+                },
+                "preparation": {
+                    "validation_ratio": 0.2,
+                    "min_chars": 1,
+                    "max_chars": 1000,
+                    "sources": [{"dataset": "test/source", "limit": 100}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    records = [
+        {
+            "messages": [
+                {"role": "user", "content": f"Question {index}"},
+                {"role": "assistant", "content": f"Answer {index}"},
+            ]
+        }
+        for index in range(150)
+    ]
+    monkeypatch.setattr(prepare_sft_bundle, "_stream_source", lambda source, seed: records)
+
+    report = prepare_sft_bundle.prepare_from_config(config_path)
+
+    assert report["total"] == 100
+    assert report["train"] > 0
+    assert report["validation"] > 0
+    assert train_path.is_file()
+    assert validation_path.is_file()
+    assert not list((tmp_path / "data").glob("*.partial"))
 
 
 def test_sft_normalizes_sharegpt_and_masks_non_assistant_tokens(tmp_path):

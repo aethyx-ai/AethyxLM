@@ -1,0 +1,224 @@
+{
+  "created_at": "2026-08-13T18:35:23.450017+00:00",
+  "warning": "Generation repetition metrics are deterministic diagnostics, not a substitute for human or benchmark-based coherence judgments.",
+  "checkpoints": [
+    {
+      "path": "checkpoints/checkpoint_step_98000.pt",
+      "step": 98000,
+      "tokens_seen": 1318912000,
+      "best_val_loss": 2.4429631662368774,
+      "model_parameters": 31171968,
+      "tokenizer_sha256": "b9670afc2c49e9457748caf4b353d325dd07f9ca93a4287de5a31310a9a36b5a",
+      "language_model": {
+        "per_source": {
+          "tinystories_v2": {
+            "loss": 2.3977023124694825,
+            "perplexity": 10.997877641154348,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.15
+          },
+          "fineweb_edu_v2": {
+            "loss": 3.281201791763306,
+            "perplexity": 26.607730444038623,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.2
+          },
+          "openwebmath_v2": {
+            "loss": 2.3267945051193237,
+            "perplexity": 10.245048391638866,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.1
+          },
+          "cosmopedia_openstax_v2": {
+            "loss": 2.133849620819092,
+            "perplexity": 8.447323290393273,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.075
+          },
+          "cosmopedia_khan_v2": {
+            "loss": 1.8629881739616394,
+            "perplexity": 6.442960722336201,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.075
+          },
+          "indic_hindi_v2": {
+            "loss": 1.489612638950348,
+            "perplexity": 4.435377093872985,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_bengali_v2": {
+            "loss": 1.735283327102661,
+            "perplexity": 5.670534192250773,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_telugu_v2": {
+            "loss": 1.9003196954727173,
+            "perplexity": 6.688032234166518,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_tamil_v2": {
+            "loss": 1.207910966873169,
+            "perplexity": 3.3464864243298753,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_marathi_v2": {
+            "loss": 1.855829906463623,
+            "perplexity": 6.397004964045923,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_gujarati_v2": {
+            "loss": 2.358996605873108,
+            "perplexity": 10.580329883649227,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_kannada_v2": {
+            "loss": 1.8039523124694825,
+            "perplexity": 6.073604873920587,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_malayalam_v2": {
+            "loss": 1.8594178318977357,
+            "perplexity": 6.419998165137721,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_punjabi_v2": {
+            "loss": 2.277207064628601,
+            "perplexity": 9.749412868962544,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          },
+          "indic_urdu_v2": {
+            "loss": 4.944444274902343,
+            "perplexity": 140.39280936095477,
+            "tokens": 5120,
+            "batches": 10,
+            "weight": 0.04
+          }
+        },
+        "weighted_loss": 2.4056569753289225,
+        "weighted_perplexity": 11.085710928905776
+      },
+      "generation_diagnostics": [
+        {
+          "prompt": "India is a diverse country because",
+          "continuation": "of the fact that the country has been in the same state.\nThe country has been in the same state and country, and the country has been in the",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.46875,
+          "repeated_4gram_ratio": 0.2413793103448276
+        },
+        {
+          "prompt": "भारत में शिक्षा का महत्व",
+          "continuation": "है।",
+          "finish_reason": "eos",
+          "tokens": 2,
+          "unique_token_ratio": 1.0,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "বাংলা ভাষার ইতিহাস",
+          "continuation": "ের বিষয়ে প্রতিবেদনে বলা হয়েছে।",
+          "finish_reason": "eos",
+          "tokens": 20,
+          "unique_token_ratio": 0.8,
+          "repeated_4gram_ratio": 0.0
+        },
+        {
+          "prompt": "Solve step by step: 17 × 23 =",
+          "continuation": "222.\n\nStep 1: Divide the number of steps by 2 to get the final answer.\n\nStep 2: Div",
+          "finish_reason": "length",
+          "tokens": 32,
+          "unique_token_ratio": 0.65625,
+          "repeated_4gram_ratio": 0.06896551724137931
+        }
+      ],
+      "long_context": [
+        {
+          "context_length": 128,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 128,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 256,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.1,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.5,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        },
+        {
+          "context_length": 512,
+          "depth": 0.9,
+          "exact_matches": 0,
+          "trials": 1,
+          "accuracy": 0.0
+        }
+      ]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ __pycache__/
 
 # Logs
 logs/
+*.log
 
 # Model files
 checkpoints/
@@ -35,6 +36,5 @@ AethyxLM/data/*.txt
 #Kilo
 .kilo/
 
-# Graphify local state
-graphify-out/cost.json
-graphify-out/cache/
+# Graphify local knowledge graph and state
+graphify-out/
