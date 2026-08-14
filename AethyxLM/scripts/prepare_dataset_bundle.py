@@ -17,6 +17,45 @@ from scripts.prepare_fineweb import atomic_write_json
 from tokenizer.tokenizer import AethyxTokenizer
 
 
+def source_target_tokens(source: dict) -> int:
+    if "target_tokens" in source:
+        return int(source["target_tokens"])
+    if "target_gb" in source:
+        return int(float(source["target_gb"]) * 1024**3) // 2
+    raise ValueError(f"Source {source.get('name', '<unnamed>')} has no token target")
+
+
+def validate_bundle(bundle: dict) -> None:
+    sources = bundle.get("sources", [])
+    if not sources:
+        raise ValueError("Bundle must contain at least one source")
+    names = [source["name"] for source in sources]
+    if len(names) != len(set(names)):
+        raise ValueError("Bundle source names must be unique")
+    total_tokens = sum(source_target_tokens(source) for source in sources)
+    declared = bundle.get("total_tokens")
+    if declared is not None and total_tokens != int(declared):
+        raise ValueError(
+            f"Source targets total {total_tokens:,}, expected {int(declared):,}"
+        )
+    if all("weight" in source for source in sources):
+        total_weight = sum(float(source["weight"]) for source in sources)
+        if abs(total_weight - 1.0) > 1e-9:
+            raise ValueError(f"Dataset weights must total 1.0, found {total_weight}")
+
+
+def write_dataset_registry(bundle: dict, path: Path, output_dir: Path) -> None:
+    registry = {
+        source["name"]: {
+            "train": str(output_dir / f"{source['name']}_train.bin"),
+            "val": str(output_dir / f"{source['name']}_val.bin"),
+            "weight": source["weight"],
+        }
+        for source in bundle["sources"]
+    }
+    atomic_write_json(path, registry)
+
+
 def ensure_token_sidecars(source: dict, output_dir: Path, tokenizer_path: str):
     tokenizer = AethyxTokenizer(tokenizer_path)
     digest = hashlib.sha256(Path(tokenizer_path).read_bytes()).hexdigest()
@@ -70,9 +109,16 @@ def prepare_bundle(args):
     if args.bundle not in manifest:
         raise KeyError(f"Unknown bundle {args.bundle!r}")
     bundle = manifest[args.bundle]
+    validate_bundle(bundle)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    target_bytes = sum(int(source["target_gb"] * 1024**3) for source in bundle["sources"])
+    if args.write_registry_only:
+        if not args.registry_output:
+            raise ValueError("--write-registry-only requires --registry-output")
+        write_dataset_registry(bundle, Path(args.registry_output), output_dir)
+        print(f"Wrote expected dataset registry to {args.registry_output}")
+        return
+    target_bytes = sum(source_target_tokens(source) * 2 for source in bundle["sources"])
     reserve_bytes = int(bundle.get("reserve_gb", 2.0) * 1024**3)
     free_bytes = shutil.disk_usage(output_dir).free
     if free_bytes < target_bytes + reserve_bytes:
@@ -95,7 +141,7 @@ def prepare_bundle(args):
         resume = state_path.exists()
         print(f"[{'resume' if resume else 'start'}] {source['name']}")
         preparer = FineWebPreparer(
-            target_gb=source["target_gb"],
+            target_gb=(source.get("target_gb") if "target_tokens" not in source else None),
             target_documents=None,
             val_split=source.get("val_split", 0.01),
             output_dir=str(output_dir),
@@ -111,10 +157,16 @@ def prepare_bundle(args):
             text_field=source.get("text_field", "text"),
             output_prefix=source["name"],
             source_revision=source.get("source_revision"),
+            target_tokens=source.get("target_tokens"),
+            required_values=source.get("required_values"),
+            preserve_formatting=source.get("preserve_formatting", False),
+            code_quality_filter=source.get("code_quality_filter", False),
         )
         status = preparer.run()
         if status != "complete":
             raise RuntimeError(f"{source['name']} ended with status {status}")
+    if args.registry_output:
+        write_dataset_registry(bundle, Path(args.registry_output), output_dir)
 
 
 if __name__ == "__main__":
@@ -124,4 +176,9 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", default="data")
     parser.add_argument("--buffer-tokens", type=int, default=500000)
     parser.add_argument("--progress-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--registry-output",
+        help="Write a MixedAethyxDataset registry after all sources complete",
+    )
+    parser.add_argument("--write-registry-only", action="store_true")
     prepare_bundle(parser.parse_args())

@@ -1,0 +1,625 @@
+{
+  "evaluation_type": "held-out tokenizer fertility and reversibility",
+  "heldout_sha256": "89c330562e44d98882531175d1cfbd4745ee0716aa5da7d549c8d704296d9b53",
+  "tokenizers": {
+    "v2_32k": {
+      "vocab_size": 32000,
+      "aggregate": {
+        "documents": 4440,
+        "tokens": 4958051,
+        "characters_per_token": 2.27436688327732,
+        "utf8_bytes_per_token": 2.4067763724092393,
+        "unknown_token_rate": 0.011152971197754925,
+        "normalized_roundtrip_rate": 0.9301801801801802
+      },
+      "per_source": {
+        "local_multilingual_indic_v2": {
+          "documents": 2352,
+          "tokens": 285928,
+          "characters_per_token": 1.87857432640385,
+          "utf8_bytes_per_token": 4.056797515458437,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "fineweb_edu_dedup_v3": {
+          "documents": 650,
+          "tokens": 901681,
+          "characters_per_token": 3.5241576566435358,
+          "utf8_bytes_per_token": 3.53956332671976,
+          "unknown_token_rate": 7.208757864477571e-05,
+          "normalized_roundtrip_rate": 0.9938461538461538
+        },
+        "sangraha_bengali_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_gujarati_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_hindi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_kannada_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_malayalam_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_marathi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_punjabi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_tamil_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_telugu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_urdu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_hindi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_bengali_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_telugu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_tamil_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_marathi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_gujarati_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_kannada_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_malayalam_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_punjabi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_urdu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "finemath_3plus_v3": {
+          "documents": 181,
+          "tokens": 367435,
+          "characters_per_token": 2.6926803380189694,
+          "utf8_bytes_per_token": 2.7151849987072545,
+          "unknown_token_rate": 0.0014968633908038157,
+          "normalized_roundtrip_rate": 0.9447513812154696
+        },
+        "openwebmath_v3": {
+          "documents": 69,
+          "tokens": 172517,
+          "characters_per_token": 2.8811131656590363,
+          "utf8_bytes_per_token": 2.8931061866366794,
+          "unknown_token_rate": 0.0010143927844792108,
+          "normalized_roundtrip_rate": 0.9420289855072463
+        },
+        "code_python_v3": {
+          "documents": 69,
+          "tokens": 276117,
+          "characters_per_token": 1.8073063230442168,
+          "utf8_bytes_per_token": 1.8076032986016797,
+          "unknown_token_rate": 0.006957195681540796,
+          "normalized_roundtrip_rate": 0.9130434782608695
+        },
+        "code_javascript_v3": {
+          "documents": 85,
+          "tokens": 288710,
+          "characters_per_token": 1.7278341588445152,
+          "utf8_bytes_per_token": 1.7280385161580825,
+          "unknown_token_rate": 0.027214159537251915,
+          "normalized_roundtrip_rate": 0.7647058823529411
+        },
+        "code_typescript_v3": {
+          "documents": 35,
+          "tokens": 206132,
+          "characters_per_token": 1.923587798109949,
+          "utf8_bytes_per_token": 1.9383307783362118,
+          "unknown_token_rate": 0.018240738943977645,
+          "normalized_roundtrip_rate": 0.9142857142857143
+        },
+        "code_html_v3": {
+          "documents": 45,
+          "tokens": 245253,
+          "characters_per_token": 1.620640726107326,
+          "utf8_bytes_per_token": 1.6286120862945612,
+          "unknown_token_rate": 0.012436137376505079,
+          "normalized_roundtrip_rate": 0.6444444444444445
+        },
+        "code_css_v3": {
+          "documents": 69,
+          "tokens": 215715,
+          "characters_per_token": 1.8434183992768236,
+          "utf8_bytes_per_token": 1.850172681547412,
+          "unknown_token_rate": 0.014644322369793478,
+          "normalized_roundtrip_rate": 0.6811594202898551
+        },
+        "code_java_v3": {
+          "documents": 105,
+          "tokens": 257118,
+          "characters_per_token": 1.9376900878196004,
+          "utf8_bytes_per_token": 1.9393508039110448,
+          "unknown_token_rate": 0.014973669676957662,
+          "normalized_roundtrip_rate": 0.7047619047619048
+        },
+        "code_c_v3": {
+          "documents": 84,
+          "tokens": 262869,
+          "characters_per_token": 1.8959481719031153,
+          "utf8_bytes_per_token": 1.8979605811259601,
+          "unknown_token_rate": 0.03187899676264603,
+          "normalized_roundtrip_rate": 0.6071428571428571
+        },
+        "code_cpp_v3": {
+          "documents": 50,
+          "tokens": 274067,
+          "characters_per_token": 1.8217333717667579,
+          "utf8_bytes_per_token": 1.8220252711928104,
+          "unknown_token_rate": 0.005316218296985774,
+          "normalized_roundtrip_rate": 0.7
+        },
+        "code_go_v3": {
+          "documents": 64,
+          "tokens": 264806,
+          "characters_per_token": 1.8847269321692106,
+          "utf8_bytes_per_token": 1.8850592509233175,
+          "unknown_token_rate": 0.06459068148002689,
+          "normalized_roundtrip_rate": 0.046875
+        },
+        "code_rust_v3": {
+          "documents": 104,
+          "tokens": 290665,
+          "characters_per_token": 1.7137529458311114,
+          "utf8_bytes_per_token": 1.7155660296217294,
+          "unknown_token_rate": 0.004534429669894896,
+          "normalized_roundtrip_rate": 0.9326923076923077
+        },
+        "code_sql_v3": {
+          "documents": 71,
+          "tokens": 236262,
+          "characters_per_token": 1.6864074629013552,
+          "utf8_bytes_per_token": 1.689158645910049,
+          "unknown_token_rate": 0.002366017387476615,
+          "normalized_roundtrip_rate": 0.7323943661971831
+        },
+        "code_shell_v3": {
+          "documents": 272,
+          "tokens": 276898,
+          "characters_per_token": 1.7925012098317792,
+          "utf8_bytes_per_token": 1.792974308229023,
+          "unknown_token_rate": 0.007547905727018613,
+          "normalized_roundtrip_rate": 0.7867647058823529
+        },
+        "cosmopedia_v2_v3": {
+          "documents": 135,
+          "tokens": 135878,
+          "characters_per_token": 3.663779272582758,
+          "utf8_bytes_per_token": 3.666907078408572,
+          "unknown_token_rate": 1.4719086239126276e-05,
+          "normalized_roundtrip_rate": 0.9925925925925926
+        }
+      }
+    },
+    "v3_48k": {
+      "vocab_size": 48000,
+      "aggregate": {
+        "documents": 4440,
+        "tokens": 3316932,
+        "characters_per_token": 3.399655766232169,
+        "utf8_bytes_per_token": 3.5975775204315315,
+        "unknown_token_rate": 6.02966838029842e-07,
+        "normalized_roundtrip_rate": 0.9995495495495496
+      },
+      "per_source": {
+        "local_multilingual_indic_v2": {
+          "documents": 2352,
+          "tokens": 296632,
+          "characters_per_token": 1.8107857547398798,
+          "utf8_bytes_per_token": 3.910407508293104,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "fineweb_edu_dedup_v3": {
+          "documents": 650,
+          "tokens": 708117,
+          "characters_per_token": 4.487487237278585,
+          "utf8_bytes_per_token": 4.507104052014004,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "sangraha_bengali_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_gujarati_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_hindi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_kannada_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_malayalam_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_marathi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_punjabi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_tamil_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_telugu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "sangraha_urdu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_hindi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_bengali_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_telugu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_tamil_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_marathi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_gujarati_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_kannada_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_malayalam_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_punjabi_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "indiccorp_urdu_v3": {
+          "documents": 0,
+          "tokens": 0,
+          "characters_per_token": 0.0,
+          "utf8_bytes_per_token": 0.0,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 0.0
+        },
+        "finemath_3plus_v3": {
+          "documents": 181,
+          "tokens": 279776,
+          "characters_per_token": 3.53634693469061,
+          "utf8_bytes_per_token": 3.5659027221777424,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "openwebmath_v3": {
+          "documents": 69,
+          "tokens": 129228,
+          "characters_per_token": 3.8462330145169776,
+          "utf8_bytes_per_token": 3.862243476645928,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_python_v3": {
+          "documents": 69,
+          "tokens": 146377,
+          "characters_per_token": 3.4091968000437225,
+          "utf8_bytes_per_token": 3.4097569973424786,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_javascript_v3": {
+          "documents": 85,
+          "tokens": 173421,
+          "characters_per_token": 2.8764855467330945,
+          "utf8_bytes_per_token": 2.8768257592794413,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_typescript_v3": {
+          "documents": 35,
+          "tokens": 109386,
+          "characters_per_token": 3.6248971532005925,
+          "utf8_bytes_per_token": 3.6526795019472327,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_html_v3": {
+          "documents": 45,
+          "tokens": 126624,
+          "characters_per_token": 3.138954700530705,
+          "utf8_bytes_per_token": 3.154394111700783,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_css_v3": {
+          "documents": 69,
+          "tokens": 158447,
+          "characters_per_token": 2.509690937663698,
+          "utf8_bytes_per_token": 2.518886441523033,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_java_v3": {
+          "documents": 105,
+          "tokens": 133553,
+          "characters_per_token": 3.730466556348416,
+          "utf8_bytes_per_token": 3.7336637889077746,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_c_v3": {
+          "documents": 84,
+          "tokens": 161456,
+          "characters_per_token": 3.0868224160142703,
+          "utf8_bytes_per_token": 3.0900988504608065,
+          "unknown_token_rate": 6.1936378951540975e-06,
+          "normalized_roundtrip_rate": 0.9880952380952381
+        },
+        "code_cpp_v3": {
+          "documents": 50,
+          "tokens": 153097,
+          "characters_per_token": 3.2611808200030046,
+          "utf8_bytes_per_token": 3.2617033645335964,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_go_v3": {
+          "documents": 64,
+          "tokens": 166585,
+          "characters_per_token": 2.9959900351172073,
+          "utf8_bytes_per_token": 2.9965182939640425,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_rust_v3": {
+          "documents": 104,
+          "tokens": 153282,
+          "characters_per_token": 3.2497488289557808,
+          "utf8_bytes_per_token": 3.253186936496131,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_sql_v3": {
+          "documents": 71,
+          "tokens": 146548,
+          "characters_per_token": 2.7187952070311434,
+          "utf8_bytes_per_token": 2.7232306138603053,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        },
+        "code_shell_v3": {
+          "documents": 272,
+          "tokens": 173688,
+          "characters_per_token": 2.8576528027267285,
+          "utf8_bytes_per_token": 2.8584070286951313,
+          "unknown_token_rate": 5.757450140481783e-06,
+          "normalized_roundtrip_rate": 0.9963235294117647
+        },
+        "cosmopedia_v2_v3": {
+          "documents": 135,
+          "tokens": 100715,
+          "characters_per_token": 4.942928064339969,
+          "utf8_bytes_per_token": 4.947147892568138,
+          "unknown_token_rate": 0.0,
+          "normalized_roundtrip_rate": 1.0
+        }
+      }
+    }
+  },
+  "v3_token_reduction_vs_v2": 0.3310008307699941
+}

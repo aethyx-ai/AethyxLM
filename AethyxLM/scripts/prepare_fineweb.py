@@ -11,7 +11,6 @@ import re
 import signal
 import sys
 import time
-import unicodedata
 from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -27,6 +26,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tokenizer.tokenizer import AethyxTokenizer
+from scripts.source_filters import (
+    is_high_quality_code,
+    matches_required_values,
+    normalize_text,
+)
 
 
 BYTES_PER_TOKEN = np.dtype("<u2").itemsize
@@ -34,8 +38,6 @@ DATASET_NAME = "HuggingFaceFW/fineweb-edu"
 DATASET_CONFIG = "sample-10BT"
 STATE_VERSION = 2
 STREAM_BATCH_SIZE = 100
-SPACE_RE = re.compile(r"[ \t]+")
-NEWLINE_RE = re.compile(r"\n{3,}")
 
 
 @dataclass
@@ -154,13 +156,24 @@ class FineWebPreparer:
         output_prefix: str = "fineweb",
         overwrite: bool = False,
         source_revision: Optional[str] = None,
+        target_tokens: Optional[int] = None,
+        required_values: Optional[Dict[str, List[object]]] = None,
+        preserve_formatting: bool = False,
+        code_quality_filter: bool = False,
     ) -> None:
-        if target_gb is None and target_documents is None:
-            raise ValueError("Either target_gb or target_documents is required")
+        targets = sum(
+            value is not None for value in (target_gb, target_documents, target_tokens)
+        )
+        if targets != 1:
+            raise ValueError(
+                "Exactly one of target_gb, target_documents, or target_tokens is required"
+            )
         if target_gb is not None and target_gb <= 0:
             raise ValueError("target_gb must be positive")
         if target_documents is not None and target_documents <= 0:
             raise ValueError("target_documents must be positive")
+        if target_tokens is not None and target_tokens <= 0:
+            raise ValueError("target_tokens must be positive")
         if not 0.0 <= val_split <= 1.0:
             raise ValueError("val_split must be between 0 and 1")
         if resume_from is not None and resume_from < 0:
@@ -177,11 +190,9 @@ class FineWebPreparer:
         self.requested_target_bytes = (
             int(target_gb * 1024**3) if target_gb is not None else None
         )
-        self.target_tokens = (
-            self.requested_target_bytes // BYTES_PER_TOKEN
-            if self.requested_target_bytes is not None
-            else None
-        )
+        self.target_tokens = target_tokens
+        if self.target_tokens is None and self.requested_target_bytes is not None:
+            self.target_tokens = self.requested_target_bytes // BYTES_PER_TOKEN
         if self.target_tokens == 0:
             raise ValueError("target_gb is too small to contain one uint16 token")
         self.target_bytes = (
@@ -196,6 +207,9 @@ class FineWebPreparer:
         self.text_field = text_field
         self.output_prefix = output_prefix
         self.source_revision = source_revision
+        self.required_values = required_values or {}
+        self.preserve_formatting = bool(preserve_formatting)
+        self.code_quality_filter = bool(code_quality_filter)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.tokenizer_path = Path(tokenizer_path)
@@ -255,11 +269,15 @@ class FineWebPreparer:
             "streaming": True,
             "revision": self.source_revision,
         }
+        projected_fields = [self.text_field, *self.required_values]
+        if self.code_quality_filter:
+            projected_fields.append("path")
+        projected_fields = list(dict.fromkeys(projected_fields))
         try:
             dataset = load_dataset(
                 *load_args,
                 **common,
-                columns=[self.text_field],
+                columns=projected_fields,
                 batch_size=STREAM_BATCH_SIZE,
             )
         except ValueError as error:
@@ -273,12 +291,8 @@ class FineWebPreparer:
             dataset = dataset.skip(self.stream_offset)
         yield from dataset
 
-    @staticmethod
-    def clean_text(text: str) -> str:
-        text = unicodedata.normalize("NFKC", text)
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        text = SPACE_RE.sub(" ", text)
-        return NEWLINE_RE.sub("\n\n", text).strip()
+    def clean_text(self, text: str) -> str:
+        return normalize_text(text, preserve_formatting=self.preserve_formatting)
 
     @staticmethod
     def _valid_text(text: str) -> bool:
@@ -303,9 +317,13 @@ class FineWebPreparer:
         raw_text = document.get(self.text_field)
         if not isinstance(raw_text, str):
             return None, None, False
+        if not matches_required_values(document, self.required_values):
+            return None, None, False
 
         text = self.clean_text(raw_text)
         if not self._valid_text(text):
+            return None, None, False
+        if self.code_quality_filter and not is_high_quality_code(document, text):
             return None, None, False
 
         digest = hashlib.blake2b(text.encode("utf-8"), digest_size=8).digest()
@@ -438,6 +456,9 @@ class FineWebPreparer:
             "text_field": self.text_field,
             "output_prefix": self.output_prefix,
             "source_revision": self.source_revision,
+            "required_values": self.required_values,
+            "preserve_formatting": self.preserve_formatting,
+            "code_quality_filter": self.code_quality_filter,
             "tokenizer": str(self.tokenizer_path),
             "tokenizer_sha256": self.tokenizer_sha256,
             "vocabulary_size": self.tokenizer.vocab_size,
@@ -454,6 +475,7 @@ class FineWebPreparer:
             "target_size_bytes": self.target_bytes,
             "requested_target_size_bytes": self.requested_target_bytes,
             "target_size_gb": self.target_gb,
+            "target_tokens": self.target_tokens,
             "validation_split": self.val_split,
             "stream_batch_size": STREAM_BATCH_SIZE,
             "creation_date": self.created_at,
@@ -517,6 +539,9 @@ class FineWebPreparer:
             "text_field": self.text_field,
             "output_prefix": self.output_prefix,
             "source_revision": self.source_revision,
+            "required_values": self.required_values,
+            "preserve_formatting": self.preserve_formatting,
+            "code_quality_filter": self.code_quality_filter,
         }
         for key, expected in optional_source_config.items():
             if key in state and state[key] != expected:
@@ -678,8 +703,8 @@ class FineWebPreparer:
 
     def _print_header(self) -> None:
         target = (
-            f"{self.target_gb:g} GiB ({self.target_tokens:,} uint16 tokens)"
-            if self.target_gb is not None
+            f"{self.target_tokens:,} uint16 tokens"
+            if self.target_tokens is not None
             else f"{self.target_documents:,} accepted documents"
         )
         print("=" * 72)
@@ -791,6 +816,7 @@ def parse_args() -> argparse.Namespace:
     )
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--target-gb", type=float, help="Combined output size in GiB")
+    target.add_argument("--target-tokens", type=int, help="Exact combined token target")
     target.add_argument(
         "--target-documents", type=int, help="Accepted document target"
     )
@@ -856,6 +882,7 @@ def main() -> None:
         output_prefix=args.output_prefix,
         overwrite=args.overwrite,
         source_revision=args.source_revision,
+        target_tokens=args.target_tokens,
     )
     preparer.run()
 

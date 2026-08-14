@@ -17,6 +17,7 @@ tensorboard>=2.14.0
 # Utilities
 tqdm>=4.65.0
 pyyaml>=6.0
+nbformat>=5.9.0
 
 # Development (optional)
 pytest>=7.0.0

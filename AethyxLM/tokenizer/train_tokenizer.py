@@ -38,6 +38,7 @@ def train_tokenizer(
     output_file=TOKENIZER_V2_FILE,
     vocab_size=VOCAB_SIZE,
     legacy_normalization=False,
+    format_version=2,
 ):
     """
     Train a Byte-Pair Encoding tokenizer.
@@ -86,7 +87,7 @@ def train_tokenizer(
     metadata = {
         "vocab_size": tokenizer.get_vocab_size(),
         "requested_vocab_size": vocab_size,
-        "format_version": 2,
+        "format_version": format_version,
         "tokenizer_type": "BPE",
         "special_tokens": SPECIAL_TOKENS + STRUCTURAL_TOKENS,
         "normalizer": (
@@ -126,14 +127,21 @@ def train_tokenizer(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train the AethyxLM v2 tokenizer")
+    parser = argparse.ArgumentParser(description="Train an AethyxLM BPE tokenizer")
     parser.add_argument("--corpus", default=str(CORPUS_FILE))
     parser.add_argument("--output", default=str(TOKENIZER_V2_FILE))
     parser.add_argument("--vocab-size", type=int, default=VOCAB_SIZE)
     parser.add_argument("--legacy-normalization", action="store_true")
+    parser.add_argument("--format-version", type=int, default=2)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    train_tokenizer(args.corpus, args.output, args.vocab_size, args.legacy_normalization)
+    train_tokenizer(
+        args.corpus,
+        args.output,
+        args.vocab_size,
+        args.legacy_normalization,
+        args.format_version,
+    )

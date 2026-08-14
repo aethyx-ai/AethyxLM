@@ -29,6 +29,7 @@ checkpoints/
 Thumbs.db
 .DS_Store
 AethyxLM/data/*.txt
+AethyxLM/tokenizer/data/*.txt
 
 #Archives
 *.zip
