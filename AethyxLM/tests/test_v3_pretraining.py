@@ -109,6 +109,10 @@ def test_generated_kaggle_notebooks_are_valid_and_use_two_process_ddp():
     preparation = nbformat.read(ROOT / "kaggle_prepare_8b.ipynb", as_version=4)
     nbformat.validate(training)
     nbformat.validate(preparation)
+    for notebook in (training, preparation):
+        for index, cell in enumerate(notebook.cells):
+            if cell.cell_type == "code":
+                compile(cell.source, f"notebook-cell-{index}", "exec")
     training_text = "\n".join("".join(cell.source) for cell in training.cells)
     preparation_text = "\n".join("".join(cell.source) for cell in preparation.cells)
     assert "--nproc_per_node=2" in training_text

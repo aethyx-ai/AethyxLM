@@ -217,7 +217,7 @@ for dataset_name, entry in expected_registry.items():
 if missing:
     raise FileNotFoundError(f'Missing binaries/sidecars ({len(missing)}): {sorted(set(missing))}')
 runtime_registry_path = CONFIG_ROOT / 'datasets_v3_8b_kaggle.json'
-runtime_registry_path.write_text(json.dumps(runtime_registry, indent=2) + '\n')
+runtime_registry_path.write_text(json.dumps(runtime_registry, indent=2) + '\\n')
 print(f'[OK] Resolved {len(runtime_registry)} dataset sources.')
 """),
         code("""
@@ -245,7 +245,7 @@ config['checkpoint'].update({
     },
 })
 runtime_config = CONFIG_ROOT / 'train_config_v3_2xt4_runtime.json'
-runtime_config.write_text(json.dumps(config, indent=2) + '\n')
+runtime_config.write_text(json.dumps(config, indent=2) + '\\n')
 print('[OK] Runtime config:', runtime_config)
 """),
         code(r"""
