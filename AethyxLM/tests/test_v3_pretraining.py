@@ -7,6 +7,7 @@ from scripts.prepare_dataset_bundle import (
     remaining_output_bytes,
     source_target_tokens,
     validate_bundle,
+    write_dataset_registry,
 )
 from scripts.source_filters import is_high_quality_code, normalize_text
 from tokenizer.tokenizer import AethyxTokenizer
@@ -44,6 +45,15 @@ def test_resume_disk_preflight_credits_existing_binary_bytes(tmp_path):
     remaining, existing = remaining_output_bytes(bundle, tmp_path)
     assert existing == 240
     assert remaining == 60
+
+
+def test_dataset_registry_paths_are_portable(tmp_path):
+    registry_path = tmp_path / "datasets.json"
+    bundle = {"sources": [{"name": "sample", "weight": 1.0}]}
+    write_dataset_registry(bundle, registry_path, Path("data/v3_8b"))
+    registry = json.loads(registry_path.read_text())
+    assert registry["sample"]["train"] == "data/v3_8b/sample_train.bin"
+    assert "\\" not in registry["sample"]["train"]
 
 
 def test_frozen_v3_tokenizer_and_heldout_benchmark():

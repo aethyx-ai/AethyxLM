@@ -206,7 +206,7 @@ missing = []
 for dataset_name, entry in expected_registry.items():
     runtime_entry = {'weight': entry['weight']}
     for split in ('train', 'val'):
-        filename = Path(entry[split]).name
+        filename = Path(str(entry[split]).replace(chr(92), '/')).name
         binary = attached(filename)
         sidecar = attached(filename + '.meta.json')
         if binary is None or sidecar is None or sidecar.parent != binary.parent:

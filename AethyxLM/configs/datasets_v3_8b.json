@@ -1,182 +1,182 @@
 {
   "fineweb_edu_dedup_v3": {
-    "train": "data\\v3_8b\\fineweb_edu_dedup_v3_train.bin",
-    "val": "data\\v3_8b\\fineweb_edu_dedup_v3_val.bin",
+    "train": "data/v3_8b/fineweb_edu_dedup_v3_train.bin",
+    "val": "data/v3_8b/fineweb_edu_dedup_v3_val.bin",
     "weight": 0.35
   },
   "sangraha_bengali_v3": {
-    "train": "data\\v3_8b\\sangraha_bengali_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_bengali_v3_val.bin",
+    "train": "data/v3_8b/sangraha_bengali_v3_train.bin",
+    "val": "data/v3_8b/sangraha_bengali_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_gujarati_v3": {
-    "train": "data\\v3_8b\\sangraha_gujarati_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_gujarati_v3_val.bin",
+    "train": "data/v3_8b/sangraha_gujarati_v3_train.bin",
+    "val": "data/v3_8b/sangraha_gujarati_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_hindi_v3": {
-    "train": "data\\v3_8b\\sangraha_hindi_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_hindi_v3_val.bin",
+    "train": "data/v3_8b/sangraha_hindi_v3_train.bin",
+    "val": "data/v3_8b/sangraha_hindi_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_kannada_v3": {
-    "train": "data\\v3_8b\\sangraha_kannada_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_kannada_v3_val.bin",
+    "train": "data/v3_8b/sangraha_kannada_v3_train.bin",
+    "val": "data/v3_8b/sangraha_kannada_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_malayalam_v3": {
-    "train": "data\\v3_8b\\sangraha_malayalam_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_malayalam_v3_val.bin",
+    "train": "data/v3_8b/sangraha_malayalam_v3_train.bin",
+    "val": "data/v3_8b/sangraha_malayalam_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_marathi_v3": {
-    "train": "data\\v3_8b\\sangraha_marathi_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_marathi_v3_val.bin",
+    "train": "data/v3_8b/sangraha_marathi_v3_train.bin",
+    "val": "data/v3_8b/sangraha_marathi_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_punjabi_v3": {
-    "train": "data\\v3_8b\\sangraha_punjabi_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_punjabi_v3_val.bin",
+    "train": "data/v3_8b/sangraha_punjabi_v3_train.bin",
+    "val": "data/v3_8b/sangraha_punjabi_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_tamil_v3": {
-    "train": "data\\v3_8b\\sangraha_tamil_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_tamil_v3_val.bin",
+    "train": "data/v3_8b/sangraha_tamil_v3_train.bin",
+    "val": "data/v3_8b/sangraha_tamil_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_telugu_v3": {
-    "train": "data\\v3_8b\\sangraha_telugu_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_telugu_v3_val.bin",
+    "train": "data/v3_8b/sangraha_telugu_v3_train.bin",
+    "val": "data/v3_8b/sangraha_telugu_v3_val.bin",
     "weight": 0.02
   },
   "sangraha_urdu_v3": {
-    "train": "data\\v3_8b\\sangraha_urdu_v3_train.bin",
-    "val": "data\\v3_8b\\sangraha_urdu_v3_val.bin",
+    "train": "data/v3_8b/sangraha_urdu_v3_train.bin",
+    "val": "data/v3_8b/sangraha_urdu_v3_val.bin",
     "weight": 0.02
   },
   "indiccorp_hindi_v3": {
-    "train": "data\\v3_8b\\indiccorp_hindi_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_hindi_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_hindi_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_hindi_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_bengali_v3": {
-    "train": "data\\v3_8b\\indiccorp_bengali_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_bengali_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_bengali_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_bengali_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_telugu_v3": {
-    "train": "data\\v3_8b\\indiccorp_telugu_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_telugu_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_telugu_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_telugu_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_tamil_v3": {
-    "train": "data\\v3_8b\\indiccorp_tamil_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_tamil_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_tamil_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_tamil_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_marathi_v3": {
-    "train": "data\\v3_8b\\indiccorp_marathi_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_marathi_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_marathi_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_marathi_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_gujarati_v3": {
-    "train": "data\\v3_8b\\indiccorp_gujarati_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_gujarati_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_gujarati_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_gujarati_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_kannada_v3": {
-    "train": "data\\v3_8b\\indiccorp_kannada_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_kannada_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_kannada_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_kannada_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_malayalam_v3": {
-    "train": "data\\v3_8b\\indiccorp_malayalam_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_malayalam_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_malayalam_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_malayalam_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_punjabi_v3": {
-    "train": "data\\v3_8b\\indiccorp_punjabi_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_punjabi_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_punjabi_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_punjabi_v3_val.bin",
     "weight": 0.01
   },
   "indiccorp_urdu_v3": {
-    "train": "data\\v3_8b\\indiccorp_urdu_v3_train.bin",
-    "val": "data\\v3_8b\\indiccorp_urdu_v3_val.bin",
+    "train": "data/v3_8b/indiccorp_urdu_v3_train.bin",
+    "val": "data/v3_8b/indiccorp_urdu_v3_val.bin",
     "weight": 0.01
   },
   "finemath_3plus_v3": {
-    "train": "data\\v3_8b\\finemath_3plus_v3_train.bin",
-    "val": "data\\v3_8b\\finemath_3plus_v3_val.bin",
+    "train": "data/v3_8b/finemath_3plus_v3_train.bin",
+    "val": "data/v3_8b/finemath_3plus_v3_val.bin",
     "weight": 0.1
   },
   "openwebmath_v3": {
-    "train": "data\\v3_8b\\openwebmath_v3_train.bin",
-    "val": "data\\v3_8b\\openwebmath_v3_val.bin",
+    "train": "data/v3_8b/openwebmath_v3_train.bin",
+    "val": "data/v3_8b/openwebmath_v3_val.bin",
     "weight": 0.05
   },
   "code_python_v3": {
-    "train": "data\\v3_8b\\code_python_v3_train.bin",
-    "val": "data\\v3_8b\\code_python_v3_val.bin",
+    "train": "data/v3_8b/code_python_v3_train.bin",
+    "val": "data/v3_8b/code_python_v3_val.bin",
     "weight": 0.03
   },
   "code_javascript_v3": {
-    "train": "data\\v3_8b\\code_javascript_v3_train.bin",
-    "val": "data\\v3_8b\\code_javascript_v3_val.bin",
+    "train": "data/v3_8b/code_javascript_v3_train.bin",
+    "val": "data/v3_8b/code_javascript_v3_val.bin",
     "weight": 0.015
   },
   "code_typescript_v3": {
-    "train": "data\\v3_8b\\code_typescript_v3_train.bin",
-    "val": "data\\v3_8b\\code_typescript_v3_val.bin",
+    "train": "data/v3_8b/code_typescript_v3_train.bin",
+    "val": "data/v3_8b/code_typescript_v3_val.bin",
     "weight": 0.0075
   },
   "code_html_v3": {
-    "train": "data\\v3_8b\\code_html_v3_train.bin",
-    "val": "data\\v3_8b\\code_html_v3_val.bin",
+    "train": "data/v3_8b/code_html_v3_train.bin",
+    "val": "data/v3_8b/code_html_v3_val.bin",
     "weight": 0.009
   },
   "code_css_v3": {
-    "train": "data\\v3_8b\\code_css_v3_train.bin",
-    "val": "data\\v3_8b\\code_css_v3_val.bin",
+    "train": "data/v3_8b/code_css_v3_train.bin",
+    "val": "data/v3_8b/code_css_v3_val.bin",
     "weight": 0.006
   },
   "code_java_v3": {
-    "train": "data\\v3_8b\\code_java_v3_train.bin",
-    "val": "data\\v3_8b\\code_java_v3_val.bin",
+    "train": "data/v3_8b/code_java_v3_train.bin",
+    "val": "data/v3_8b/code_java_v3_val.bin",
     "weight": 0.015
   },
   "code_c_v3": {
-    "train": "data\\v3_8b\\code_c_v3_train.bin",
-    "val": "data\\v3_8b\\code_c_v3_val.bin",
+    "train": "data/v3_8b/code_c_v3_train.bin",
+    "val": "data/v3_8b/code_c_v3_val.bin",
     "weight": 0.01125
   },
   "code_cpp_v3": {
-    "train": "data\\v3_8b\\code_cpp_v3_train.bin",
-    "val": "data\\v3_8b\\code_cpp_v3_val.bin",
+    "train": "data/v3_8b/code_cpp_v3_train.bin",
+    "val": "data/v3_8b/code_cpp_v3_val.bin",
     "weight": 0.01125
   },
   "code_go_v3": {
-    "train": "data\\v3_8b\\code_go_v3_train.bin",
-    "val": "data\\v3_8b\\code_go_v3_val.bin",
+    "train": "data/v3_8b/code_go_v3_train.bin",
+    "val": "data/v3_8b/code_go_v3_val.bin",
     "weight": 0.012
   },
   "code_rust_v3": {
-    "train": "data\\v3_8b\\code_rust_v3_train.bin",
-    "val": "data\\v3_8b\\code_rust_v3_val.bin",
+    "train": "data/v3_8b/code_rust_v3_train.bin",
+    "val": "data/v3_8b/code_rust_v3_val.bin",
     "weight": 0.012
   },
   "code_sql_v3": {
-    "train": "data\\v3_8b\\code_sql_v3_train.bin",
-    "val": "data\\v3_8b\\code_sql_v3_val.bin",
+    "train": "data/v3_8b/code_sql_v3_train.bin",
+    "val": "data/v3_8b/code_sql_v3_val.bin",
     "weight": 0.009
   },
   "code_shell_v3": {
-    "train": "data\\v3_8b\\code_shell_v3_train.bin",
-    "val": "data\\v3_8b\\code_shell_v3_val.bin",
+    "train": "data/v3_8b/code_shell_v3_train.bin",
+    "val": "data/v3_8b/code_shell_v3_val.bin",
     "weight": 0.012
   },
   "cosmopedia_v2_v3": {
-    "train": "data\\v3_8b\\cosmopedia_v2_v3_train.bin",
-    "val": "data\\v3_8b\\cosmopedia_v2_v3_val.bin",
+    "train": "data/v3_8b/cosmopedia_v2_v3_train.bin",
+    "val": "data/v3_8b/cosmopedia_v2_v3_val.bin",
     "weight": 0.05
   }
 }

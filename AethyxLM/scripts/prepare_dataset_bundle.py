@@ -47,8 +47,8 @@ def validate_bundle(bundle: dict) -> None:
 def write_dataset_registry(bundle: dict, path: Path, output_dir: Path) -> None:
     registry = {
         source["name"]: {
-            "train": str(output_dir / f"{source['name']}_train.bin"),
-            "val": str(output_dir / f"{source['name']}_val.bin"),
+            "train": (output_dir / f"{source['name']}_train.bin").as_posix(),
+            "val": (output_dir / f"{source['name']}_val.bin").as_posix(),
             "weight": source["weight"],
         }
         for source in bundle["sources"]
