@@ -13,9 +13,11 @@ Features:
 - Graceful shutdown on signals
 """
 
+import gc
 import os
 import time
 import signal
+import threading
 import warnings
 from contextlib import nullcontext
 from pathlib import Path
@@ -98,10 +100,20 @@ class Trainer:
         metrics_file: Optional[str] = None,
         run_id: Optional[str] = None,
         checkpoint_backup: Optional[dict] = None,
+        xla_world_size: int = 1,
     ):
         self.model = model
         self.is_distributed = dist.is_available() and dist.is_initialized()
-        self.rank = dist.get_rank() if self.is_distributed else 0
+        requested_device = str(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.is_xla = requested_device.startswith("xla")
+        self.is_cuda = requested_device.startswith("cuda")
+        self.xla_world_size = int(xla_world_size if self.is_xla else 1)
+        if self.is_xla:
+            import torch_xla.runtime as xr
+
+            self.rank = int(xr.global_ordinal())
+        else:
+            self.rank = dist.get_rank() if self.is_distributed else 0
         self.is_main_process = self.rank == 0
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
@@ -110,10 +122,14 @@ class Trainer:
         self.warmup_steps = warmup_steps
         self.max_steps = max_steps
         self.grad_accum_steps = grad_accum_steps
-        self.use_amp = use_amp and torch.cuda.is_available()
+        self.use_amp = use_amp and (self.is_cuda or self.is_xla)
         if amp_dtype not in {"auto", "float16", "bfloat16"}:
             raise ValueError("amp_dtype must be auto, float16, or bfloat16")
-        bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        if self.is_xla and amp_dtype == "float16":
+            raise ValueError("TPU/XLA mixed precision requires bfloat16 or auto")
+        bf16_supported = self.is_xla or (
+            self.is_cuda and torch.cuda.is_bf16_supported()
+        )
         self.amp_dtype = (
             torch.bfloat16
             if amp_dtype == "bfloat16" or (amp_dtype == "auto" and bf16_supported)
@@ -135,8 +151,10 @@ class Trainer:
         if self.eval_interval <= 0:
             raise ValueError("eval_interval must be positive")
         
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = requested_device
         self.model.to(self.device)
+        if self.is_xla and hasattr(self.model, "lm_head") and hasattr(self.model, "token_embedding"):
+            self.model.lm_head.weight = self.model.token_embedding.weight
         
         # Loss
         self.criterion = LanguageModelLoss(z_loss_coefficient=z_loss_coefficient)
@@ -226,6 +244,11 @@ class Trainer:
             )
 
     def _register_signal_handlers(self):
+        # PyTorch/XLA may execute replicas in worker threads. Python only allows
+        # process signal handlers to be installed from the main interpreter thread.
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         def signal_handler(signum, frame):
             print(f"\nReceived signal {signum}, saving checkpoint...")
             self._save_checkpoint(is_best=False, force=True)
@@ -237,6 +260,27 @@ class Trainer:
     def _raw_model(self):
         return self.model.module if hasattr(self.model, "module") else self.model
 
+    def _xla_rendezvous(self, tag: str):
+        if self.is_xla and self.xla_world_size > 1:
+            import torch_xla.core.xla_model as xm
+
+            xm.rendezvous(tag)
+
+    def _device_memory_gb(self) -> float:
+        if self.is_xla:
+            import torch_xla.core.xla_model as xm
+
+            info = xm.get_memory_info(torch.device(self.device))
+            used = info.get("bytes_used")
+            if used is not None:
+                return float(used) / 1e9
+            total = float(info.get("kb_total", 0))
+            free = float(info.get("kb_free", 0))
+            return max(0.0, total - free) * 1024 / 1e9
+        if self.is_cuda:
+            return torch.cuda.memory_allocated() / 1e9
+        return 0.0
+
     def train_step(self, batch) -> float:
         input_ids, targets = batch
         active_context = self._active_context_length()
@@ -247,7 +291,7 @@ class Trainer:
         targets = targets.to(self.device)
         
         if self.use_amp:
-            with torch.amp.autocast("cuda", dtype=self.amp_dtype):
+            with torch.amp.autocast("xla" if self.is_xla else "cuda", dtype=self.amp_dtype):
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
                 loss = loss / self.grad_accum_steps
@@ -257,7 +301,8 @@ class Trainer:
             loss = loss / self.grad_accum_steps
         
         self.scaler.scale(loss).backward()
-        return loss.item() * self.grad_accum_steps
+        unscaled_loss = loss.detach() * self.grad_accum_steps
+        return unscaled_loss if self.is_xla else unscaled_loss.item()
 
     def _active_context_length(self) -> int:
         """Return the curriculum context length for the current step."""
@@ -271,10 +316,16 @@ class Trainer:
         return length
 
     def optimizer_step(self) -> float:
-        self.scaler.unscale_(self.optimizer)
+        if not self.is_xla:
+            self.scaler.unscale_(self.optimizer)
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
+        if self.is_xla:
+            import torch_xla.core.xla_model as xm
+
+            xm.optimizer_step(self.optimizer, barrier=False)
+        else:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
         self.scheduler.step()
         self.optimizer.zero_grad()
         return grad_norm
@@ -293,18 +344,29 @@ class Trainer:
             targets = targets.to(self.device)
             
             if self.use_amp:
-                with torch.amp.autocast("cuda", dtype=self.amp_dtype):
+                with torch.amp.autocast("xla" if self.is_xla else "cuda", dtype=self.amp_dtype):
                     logits = self.model(input_ids)
                     loss = self.criterion(logits, targets)
             else:
                 logits = self.model(input_ids)
                 loss = self.criterion(logits, targets)
             
-            total_loss += loss.item()
+            total_loss += loss.detach() if self.is_xla else loss.item()
             num_batches += 1
         
         self.model.train()
-        if getattr(self, "is_distributed", False):
+        if self.is_xla:
+            import torch_xla.core.xla_model as xm
+
+            totals = torch.stack(
+                [
+                    total_loss if torch.is_tensor(total_loss) else torch.tensor(total_loss, device=self.device),
+                    torch.tensor(float(num_batches), device=self.device),
+                ]
+            )
+            totals = xm.all_reduce(xm.REDUCE_SUM, totals)
+            total_loss, num_batches = [float(value) for value in totals.cpu()]
+        elif getattr(self, "is_distributed", False):
             totals = torch.tensor(
                 [total_loss, float(num_batches)], device=self.device, dtype=torch.float64
             )
@@ -388,7 +450,7 @@ class Trainer:
         - Save numbered checkpoints only at positive save_interval steps
         - Keep checkpoint_best.pt, checkpoint_latest.pt, and the last 3 numbered files
         """
-        if not getattr(self, "is_main_process", True):
+        if not getattr(self, "is_main_process", True) and not getattr(self, "is_xla", False):
             return
         is_interval_step = self.step > 0 and self.step % self.save_interval == 0
         if not is_best and not force and not is_interval_step:
@@ -409,6 +471,7 @@ class Trainer:
                 "numpy": __import__('numpy').random.get_state(),
                 "torch": torch.get_rng_state(),
                 "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                "xla": None,
             },
             "config": {
                 "tokenizer_sha256": getattr(self, "tokenizer_sha256", None),
@@ -441,7 +504,6 @@ class Trainer:
                     "use_sdpa": model.use_sdpa,
                     "qk_norm": model.qk_norm,
                     "gradient_checkpointing": model.gradient_checkpointing,
-                    "context_adapter": model.context_adapter_config,
                     "sliding_window": model.sliding_window,
                     "global_attention_interval": model.global_attention_interval,
                 }
@@ -451,18 +513,22 @@ class Trainer:
         if is_best:
             best_path = self.checkpoint_dir / "checkpoint_best.pt"
             self._atomic_torch_save(checkpoint, best_path)
-            print(f"[OK] Updated {best_path.name} at step {self.step}")
+            if getattr(self, "is_main_process", True):
+                print(f"[OK] Updated {best_path.name} at step {self.step}")
             if not force:
                 return
 
         if force or is_interval_step:
             latest_path = self.checkpoint_dir / "checkpoint_latest.pt"
             self._atomic_torch_save(checkpoint, latest_path)
-            print(f"[OK] Updated {latest_path.name} at step {self.step}")
+            if getattr(self, "is_main_process", True):
+                print(f"[OK] Updated {latest_path.name} at step {self.step}")
 
         if is_interval_step:
             step_path = self.checkpoint_dir / f"checkpoint_step_{self.step}.pt"
             self._atomic_torch_save(checkpoint, step_path)
+            if not getattr(self, "is_main_process", True):
+                return
             print(f"[OK] Saved checkpoint_step_{self.step}.pt")
             milestone_interval = getattr(self, "milestone_interval", 0)
             if milestone_interval > 0 and self.step % milestone_interval == 0:
@@ -474,7 +540,7 @@ class Trainer:
             self._track("checkpoint_saved", path=str(step_path))
             self._rotate_checkpoints()
             self._backup_checkpoint(step_path)
-        elif force:
+        elif force and getattr(self, "is_main_process", True):
             self._backup_checkpoint(latest_path)
 
     def _backup_checkpoint(self, checkpoint_path: Path):
@@ -489,15 +555,23 @@ class Trainer:
                 destination=backup.handle,
             )
 
-    @staticmethod
-    def _atomic_torch_save(checkpoint: dict, path: Path):
+    def _atomic_torch_save(self, checkpoint: dict, path: Path):
         """Write a checkpoint completely before replacing its public path."""
         temporary = path.with_suffix(path.suffix + ".tmp")
         try:
-            torch.save(checkpoint, temporary)
-            os.replace(temporary, path)
+            if getattr(self, "is_xla", False):
+                import torch_xla.core.xla_model as xm
+
+                xm.save(checkpoint, temporary, master_only=True, global_master=True)
+                self._xla_rendezvous(f"checkpoint-written-{path.name}-{self.step}")
+                if getattr(self, "is_main_process", True):
+                    os.replace(temporary, path)
+                self._xla_rendezvous(f"checkpoint-published-{path.name}-{self.step}")
+            else:
+                torch.save(checkpoint, temporary)
+                os.replace(temporary, path)
         finally:
-            if temporary.exists():
+            if getattr(self, "is_main_process", True) and temporary.exists():
                 temporary.unlink()
 
     def _rotate_checkpoints(self):
@@ -517,6 +591,10 @@ class Trainer:
 
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
+        if self.is_xla and self.rank:
+            # Loading eight complete CUDA checkpoints concurrently exceeds the
+            # Kaggle TPU VM's host RAM. Serialize their peak CPU allocations.
+            time.sleep(60 * self.rank)
         # Stage the serialized state on system RAM first. Loading a complete
         # optimizer checkpoint directly onto CUDA creates an avoidable VRAM
         # spike, which is especially costly on 6 GB laptop GPUs.
@@ -532,8 +610,20 @@ class Trainer:
         model = self._raw_model()
         model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if self.is_xla:
+            # CUDA checkpoints may persist fused Adam flags in param groups.
+            # PyTorch/XLA cannot execute that fused optimizer implementation.
+            for group in self.optimizer.param_groups:
+                group["fused"] = False
+                group["foreach"] = False
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        if self.is_xla:
+            # Optimizer tensors loaded on CPU must follow their parameters to XLA.
+            for state in self.optimizer.state.values():
+                for key, value in state.items():
+                    if torch.is_tensor(value):
+                        state[key] = value.to(self.device)
         
         self.step = checkpoint["step"]
         self.epoch = checkpoint["epoch"]
@@ -549,11 +639,24 @@ class Trainer:
             # map_location may move this CPU RNG tensor onto CUDA.
             torch.set_rng_state(checkpoint["rng_state"]["torch"].cpu())
             if torch.cuda.is_available() and checkpoint["rng_state"]["cuda"]:
-                torch.cuda.set_rng_state_all(
-                    [state.cpu() for state in checkpoint["rng_state"]["cuda"]]
-                )
+                # A checkpoint produced by multi-GPU DDP may later resume on a
+                # single GPU (for example Kaggle 2xT4 -> Colab T4). Restore only
+                # states for CUDA devices that exist in the current runtime.
+                saved_cuda_states = checkpoint["rng_state"]["cuda"]
+                for device_index, state in enumerate(
+                    saved_cuda_states[: torch.cuda.device_count()]
+                ):
+                    torch.cuda.set_rng_state(state.cpu(), device=device_index)
+
+        if self.is_xla:
+            # Materialize transfers before releasing the serialized CPU copy.
+            import torch_xla.core.xla_model as xm
+            xm.mark_step()
+        del checkpoint
+        gc.collect()
         
         print(f"Loaded checkpoint from step {self.step}")
+        self._xla_rendezvous("checkpoint-loaded")
         self._track("checkpoint_loaded", path=str(Path(path).expanduser().resolve()))
 
     def train(self):
@@ -583,6 +686,7 @@ class Trainer:
         
         self.model.train()
         running_loss = 0.0
+        pending_xla_loss = None
         step_start_time = time.time()
         interval_tokens = 0
         interval_microbatches = 0
@@ -616,16 +720,19 @@ class Trainer:
                     )
                     with sync_context:
                         loss = self.train_step(batch)
-                    running_loss += loss
+                    if getattr(self, "is_xla", False):
+                        pending_xla_loss = loss if pending_xla_loss is None else pending_xla_loss + loss
+                    else:
+                        running_loss += loss
                     batch_tokens = getattr(
                         self,
                         "last_batch_tokens",
                         self.train_dataloader.batch_size * self._raw_model().context_length,
                     )
                     batch_tokens *= (
-                        dist.get_world_size()
-                        if getattr(self, "is_distributed", False)
-                        else 1
+                        getattr(self, "xla_world_size", 1)
+                        if getattr(self, "is_xla", False)
+                        else (dist.get_world_size() if getattr(self, "is_distributed", False) else 1)
                     )
                     interval_tokens += batch_tokens
                     self.tokens_seen = getattr(self, "tokens_seen", 0) + batch_tokens
@@ -636,6 +743,9 @@ class Trainer:
                         continue
 
                     self.optimizer_step()
+                    if getattr(self, "is_xla", False):
+                        running_loss += float(pending_xla_loss.cpu())
+                        pending_xla_loss = None
                     microbatches_since_update = 0
                     # A step is one optimizer update, independent of accumulation.
                     self.step += 1
@@ -652,7 +762,7 @@ class Trainer:
                             f"Loss: {avg_loss:.4f} | "
                             f"LR: {lr:.2e} | "
                             f"Tok/s: {tokens_per_sec:.0f} | "
-                            f"GPU: {torch.cuda.memory_allocated()/1e9:.2f}GB | "
+                            f"Device memory: {self._device_memory_gb():.2f}GB | "
                             f"Time: {elapsed:.1f}s"
                         )
                         
@@ -661,13 +771,13 @@ class Trainer:
                             self.writer.add_scalar("train/lr", lr, self.step)
                             self.writer.add_scalar("train/tokens_per_sec", tokens_per_sec, self.step)
                             self.writer.add_scalar("train/tokens_seen", self.tokens_seen, self.step)
-                            self.writer.add_scalar("train/gpu_mem_gb", torch.cuda.memory_allocated()/1e9, self.step)
+                            self.writer.add_scalar("train/device_mem_gb", self._device_memory_gb(), self.step)
                         self._track(
                             "train_metrics",
                             loss=avg_loss,
                             learning_rate=lr,
                             tokens_per_second=tokens_per_sec,
-                            gpu_memory_gb=torch.cuda.memory_allocated() / 1e9,
+                            device_memory_gb=self._device_memory_gb(),
                             context_length=self._active_context_length(),
                         )
                         

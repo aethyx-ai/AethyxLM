@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 from dataset.dataset import AethyxDataset
 from evaluation.evaluator import evaluate_language_model
 from evaluation.long_context import evaluate_passkey_retrieval
-from inference.generation import SamplingConfig, generate_text
-from model.gpt import GPT
+from chat import load_model_and_tokenizer
+from inference.generation import generate_text, sampling_for_decoding
 
 
 DEFAULT_PROMPTS = (
@@ -41,23 +41,11 @@ def _repetition_metrics(token_ids: Iterable[int]) -> dict:
 
 
 def load_checkpoint_once(checkpoint_path: Path, tokenizer, device: str):
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    config = checkpoint.get("config", {})
-    expected_hash = (
-        config.get("tokenizer", {}).get("sha256")
-        or config.get("tokenizer_sha256")
+    model, loaded_tokenizer, checkpoint = load_model_and_tokenizer(
+        checkpoint_path, tokenizer.path, device
     )
-    if expected_hash and expected_hash != tokenizer.sha256:
+    if loaded_tokenizer.sha256 != tokenizer.sha256:
         raise RuntimeError(f"Tokenizer mismatch for {checkpoint_path}")
-    state = checkpoint["model_state_dict"]
-    model_config = GPT._infer_checkpoint_config(
-        state, config.get("model", config)
-    )
-    if int(model_config["vocab_size"]) != tokenizer.vocab_size:
-        raise RuntimeError(f"Vocabulary mismatch for {checkpoint_path}")
-    model = GPT(vocab_size=tokenizer.vocab_size, config=model_config)
-    model.load_compatible_state_dict(state, strict=True)
-    model.to(device).eval()
     return model, checkpoint
 
 
@@ -97,13 +85,8 @@ def evaluate_generation(model, tokenizer, prompts=DEFAULT_PROMPTS, max_new_token
     torch.manual_seed(42)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(42)
-    sampling = SamplingConfig(
-        max_new_tokens=max_new_tokens,
-        temperature=0.8,
-        top_k=40,
-        top_p=0.9,
-        repetition_penalty=1.18,
-        no_repeat_ngram_size=4,
+    sampling = sampling_for_decoding(
+        "default", max_new_tokens=max_new_tokens
     )
     results = []
     for prompt in prompts:

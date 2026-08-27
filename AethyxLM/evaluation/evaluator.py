@@ -1,4 +1,4 @@
-"""Reproducible language-model and context-efficiency measurements."""
+"""Reproducible language-model measurements."""
 
 import math
 from dataclasses import asdict, dataclass
@@ -12,16 +12,6 @@ class LanguageModelMetrics:
     perplexity: float
     tokens: int
     batches: int
-
-
-@dataclass(frozen=True)
-class ContextCompressionMetrics:
-    source_units: int
-    compressed_units: int
-    reduction: float
-    baseline_accuracy: float
-    compressed_accuracy: float
-    accuracy_retention: float
 
 
 @torch.no_grad()
@@ -59,31 +49,6 @@ def evaluate_language_model(
         perplexity=math.exp(min(mean_loss, 20.0)),
         tokens=total_tokens,
         batches=batches,
-    )
-
-
-def context_compression_metrics(
-    source_units: int,
-    compressed_units: int,
-    baseline_correct: int,
-    compressed_correct: int,
-    examples: int,
-) -> ContextCompressionMetrics:
-    """Score compression only alongside retained downstream accuracy."""
-    if source_units <= 0 or compressed_units <= 0 or examples <= 0:
-        raise ValueError("unit counts and examples must be positive")
-    baseline_accuracy = baseline_correct / examples
-    compressed_accuracy = compressed_correct / examples
-    retention = (
-        compressed_accuracy / baseline_accuracy if baseline_accuracy > 0 else 0.0
-    )
-    return ContextCompressionMetrics(
-        source_units=source_units,
-        compressed_units=compressed_units,
-        reduction=1.0 - compressed_units / source_units,
-        baseline_accuracy=baseline_accuracy,
-        compressed_accuracy=compressed_accuracy,
-        accuracy_retention=retention,
     )
 
 

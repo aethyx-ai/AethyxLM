@@ -39,3 +39,18 @@ AethyxLM/tokenizer/data/*.txt
 
 # Graphify local knowledge graph and state
 graphify-out/
+
+# Local datasets, outputs, and internal research artifacts
+AethyxLM/data/
+AethyxLM/output/
+AethyxLM/tmp/
+AethyxLM/evaluation/results/*.json
+output/
+tmp/
+Research/
+Papers/
+Experiments/
+*Investor_Pitch_Deck*
+build_*_pitch_pdf.py
+*.inspect.ndjson
+.codex-tmp/

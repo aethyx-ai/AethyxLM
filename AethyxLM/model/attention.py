@@ -195,6 +195,12 @@ class MultiHeadSelfAttention(nn.Module):
 
         expanded_k = self._expand_kv(k)
         expanded_v = self._expand_kv(v)
+        # PyTorch/XLA autocast can leave Q/K in float32 while V is bfloat16.
+        # SDPA requires all three operands to share a dtype.
+        if expanded_k.dtype != q.dtype:
+            expanded_k = expanded_k.to(q.dtype)
+        if expanded_v.dtype != q.dtype:
+            expanded_v = expanded_v.to(q.dtype)
         key_length = expanded_k.size(2)
         dropout_p = self.dropout_rate if self.training else 0.0
 

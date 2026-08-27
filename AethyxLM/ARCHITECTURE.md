@@ -22,35 +22,6 @@ retrieval quality.
 Legacy checkpoints remain compatible because models without the new config
 keys retain separate Q/K/V projections and one KV head per query head.
 
-## Compiled-context research boundary
-
-Context compression remains experimental and disabled by default. The optional
-`LatentContextAdapter` accepts typed features from any future local compiler
-(text, graph, visual, structured, or hybrid), resamples a variable number of
-items into a fixed latent budget, and exposes those latents to explicitly
-selected decoder layers through gated cross-attention.
-
-```text
-compiler features + type IDs + validity mask
-                    |
-                    v
-          fixed latent context budget
-                    |
-                    v
-       selected decoder cross-attention layers
-```
-
-The adapter does not claim that a representation is information-preserving.
-`evaluation/evaluator.py` reports reduction and downstream accuracy retention
-as separate metrics. Compression succeeds only when task performance remains
-within an agreed tolerance of the raw-context baseline.
-
-`ContextMemoryBank` adds deterministic query-aware local retrieval before the
-latent bottleneck. It preserves type IDs and source references, allowing a
-future compiler to retrieve exact raw material when compressed context is not
-sufficient. Retrieval, compression, and the decoder remain separate ablation
-boundaries.
-
 ## Tokenizer generations
 
 The production `tokenizer/tokenizer.json` is tokenizer v2: a 32K ByteLevel BPE
@@ -323,19 +294,13 @@ These results are bounded engineering pilots, not frontier-model claims:
   reached validation loss 4.894 versus 5.041 for the 6.84M classic model, while
   running slower on this GPU. The differing parameter counts and short budget
   prevent an intelligence conclusion.
-- Context compression: a synthetic exact-binding task rejected the current
-  generic latent resampler. At 70.3% unit reduction it achieved 7.83% exact
-  retrieval (random baseline 6.25%). Therefore the proposed 70% context reduction
-  remains unvalidated and requires key/address-preserving compiler structure.
-
 Reproducible artifacts are `sdpa_backend_probe.json`, `gpu_benchmark.json`,
 `tokenizer/tokenizer_evaluation.json`, `scaling_pilot_gpu.json`,
-`architecture_quality_pilot_gpu.json`, and `context_compression_pilot.json`.
+and `architecture_quality_pilot_gpu.json`.
 
-The current production training configuration is a 31,171,968-parameter model
-with 12 layers, 384 dimensions, 6 query heads, 2 KV heads, a 512-token length
-curriculum, and 15 weighted datasets. A batch-2, 512-token BF16 optimizer smoke
-test used 660 MiB peak VRAM on an MX450.
+The current v3 research configuration is an approximately 137.6M-parameter
+model with 16 layers, 768 dimensions, 12 query heads, 4 KV heads, a 1,024-token
+training context, and a 48,000-token vocabulary.
 
 - [RMSNorm](https://arxiv.org/abs/1910.07467) - Zhang & Sennrich, 2019
 - [RoPE](https://arxiv.org/abs/2104.09864) - Su et al., 2021

@@ -2,6 +2,7 @@
 """Local completion and interactive chat interface for AethyxLM checkpoints."""
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -15,7 +16,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from model.gpt import GPT
 from tokenizer.tokenizer import AethyxTokenizer
-from inference.generation import SamplingConfig, generate_text
+from inference.generation import (
+    SamplingConfig,
+    format_inference_prompt as _format_inference_prompt,
+    generate_text,
+    stop_strings_for_mode,
+)
+from inference.quantization import QUANTIZATION_MODES, quantize_model_for_inference
 
 
 def checkpoint_step(path: Path) -> Optional[int]:
@@ -114,12 +121,80 @@ def resolve_device(requested: str) -> str:
     return requested
 
 
+def resolve_tokenizer_path(
+    checkpoint_path: Path,
+    checkpoint_config: dict,
+    tokenizer_path: Optional[Path] = None,
+) -> Path:
+    """Resolve the checkpoint's tokenizer, preferring its saved fingerprint."""
+    if tokenizer_path is not None:
+        selected = tokenizer_path.expanduser().resolve()
+        if not selected.is_file():
+            raise FileNotFoundError(f"Tokenizer file not found: {selected}")
+        return selected
+
+    tokenizer_info = checkpoint_config.get("tokenizer", {})
+    if not isinstance(tokenizer_info, dict):
+        tokenizer_info = {}
+    expected_hash = (
+        tokenizer_info.get("sha256")
+        or checkpoint_config.get("tokenizer_sha256")
+    )
+    saved_name = tokenizer_info.get("file_name")
+
+    candidates = []
+    if saved_name:
+        candidates.extend(
+            (
+                checkpoint_path.parent / saved_name,
+                PROJECT_ROOT / "tokenizer" / saved_name,
+                PROJECT_ROOT / saved_name,
+            )
+        )
+    candidates.append(PROJECT_ROOT / "tokenizer" / "tokenizer.json")
+    candidates.extend((PROJECT_ROOT / "tokenizer").glob("*.json"))
+    candidates.extend(checkpoint_path.parent.glob("*.json"))
+
+    unique_candidates = []
+    seen = set()
+    for candidate in candidates:
+        candidate = candidate.expanduser().resolve()
+        if candidate not in seen and candidate.is_file():
+            unique_candidates.append(candidate)
+            seen.add(candidate)
+
+    if expected_hash:
+        for candidate in unique_candidates:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if digest == expected_hash:
+                return candidate
+        expected = f" named {saved_name!r}" if saved_name else ""
+        raise FileNotFoundError(
+            f"Could not find the tokenizer{expected} matching checkpoint fingerprint "
+            f"{expected_hash}. Pass it explicitly with --tokenizer."
+        )
+
+    if saved_name:
+        named = next(
+            (candidate for candidate in unique_candidates if candidate.name == saved_name),
+            None,
+        )
+        if named is not None:
+            return named
+    if unique_candidates:
+        return unique_candidates[0]
+    raise FileNotFoundError(
+        "No tokenizer JSON was found. Pass the correct file with --tokenizer."
+    )
+
+
 def load_model_and_tokenizer(
     checkpoint_path: Path,
-    tokenizer_path: Path,
+    tokenizer_path: Optional[Path],
     device: str,
+    quantization: str = "none",
 ):
-    """Load and cross-check a checkpoint, its architecture, and tokenizer v2."""
+    """Load and cross-check a checkpoint, its architecture, and tokenizer."""
     print(f"Loading checkpoint: {checkpoint_path}")
     checkpoint = torch.load(
         checkpoint_path,
@@ -134,7 +209,12 @@ def load_model_and_tokenizer(
     saved_model_config = checkpoint_config.get("model", checkpoint_config)
     model_config = GPT._infer_checkpoint_config(state_dict, saved_model_config)
 
-    tokenizer_path = tokenizer_path.expanduser().resolve()
+    tokenizer_path = resolve_tokenizer_path(
+        checkpoint_path,
+        checkpoint_config,
+        tokenizer_path,
+    )
+    print(f"Tokenizer: {tokenizer_path}")
     tokenizer = AethyxTokenizer(tokenizer_path)
     expected_vocab = int(model_config["vocab_size"])
     if tokenizer.vocab_size != expected_vocab:
@@ -160,6 +240,7 @@ def load_model_and_tokenizer(
     model = GPT(vocab_size=expected_vocab, config=model_config)
     model.load_compatible_state_dict(state_dict, strict=True)
     model.to(device)
+    model = quantize_model_for_inference(model, quantization, device)
     model.eval()
 
     print(f"Loaded training step: {checkpoint.get('step', 'unknown')}")
@@ -171,6 +252,7 @@ def load_model_and_tokenizer(
     )
     print(f"Vocabulary: {tokenizer.vocab_size:,} ({tokenizer_check})")
     print(f"Context length: {model.context_length:,}")
+    print(f"Quantization: {quantization}")
     return model, tokenizer, checkpoint
 
 
@@ -196,6 +278,7 @@ def generate(
     min_p: float = 0.0,
     repetition_penalty: float = 1.18,
     no_repeat_ngram_size: int = 4,
+    stop_strings: tuple[str, ...] = (),
     on_text=None,
 ) -> str:
     """Compatibility wrapper around the reusable inference engine."""
@@ -212,10 +295,19 @@ def generate(
             repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=no_repeat_ngram_size,
         ),
-        stop_strings=("\nUser:", "User:", "\nAethyx:", "Aethyx:"),
+        stop_strings=stop_strings,
         on_text=on_text,
     )
     return result.text
+
+
+def format_inference_prompt(
+    text: str,
+    mode: str,
+    history: str = "",
+) -> str:
+    """Compatibility wrapper for the canonical inference prompt formatter."""
+    return _format_inference_prompt(text, mode, history)
 
 
 def trim_to_token_budget(
@@ -245,7 +337,7 @@ def stream_write(text: str):
     sys.stdout.flush()
 
 
-def interactive_chat(
+def interactive_session(
     model: GPT,
     tokenizer: AethyxTokenizer,
     temperature: float,
@@ -256,17 +348,19 @@ def interactive_chat(
     no_repeat_ngram_size: int,
     max_new: int,
     stream: bool,
+    mode: str,
 ):
-    print("\nChat started. Commands: /temp, /topk, /ngram, /max, /clear, /help, /quit")
-    print(
-        "Note: this is a pretrained base-model checkpoint; conversational quality "
-        "depends on later instruction tuning."
-    )
+    label = "Chat" if mode == "chat" else "Base completion"
+    print(f"\n{label} mode started. Commands: /temp, /topk, /ngram, /max, /clear, /help, /quit")
+    if mode == "base":
+        print("Each entry is continued as raw text; no User/Aethyx role markers are added.")
+    else:
+        print("Chat formatting is intended only for an instruction-tuned checkpoint.")
     history = ""
 
     while True:
         try:
-            user_text = input("\nYou: ").strip()
+            user_text = input("\nYou: " if mode == "chat" else "\nPrompt: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nBye!")
             return
@@ -316,7 +410,8 @@ def interactive_chat(
                 print("Invalid command value. Type /help.")
             continue
 
-        prompt = f"{history}User: {user_text}\nAethyx:"
+        prompt = format_inference_prompt(user_text, mode, history)
+        stop_strings = stop_strings_for_mode(mode)
         try:
             if stream:
                 print("\nAethyx: ", end="", flush=True)
@@ -331,18 +426,20 @@ def interactive_chat(
                 min_p=min_p,
                 repetition_penalty=repetition_penalty,
                 no_repeat_ngram_size=no_repeat_ngram_size,
+                stop_strings=stop_strings,
                 on_text=stream_write if stream else None,
             )
             if stream:
                 print()
             else:
                 safe_print(f"\nAethyx: {response}")
-            history_budget = max(32, model.context_length - max_new - 32)
-            history = trim_to_token_budget(
-                f"{prompt} {response}\n",
-                tokenizer,
-                history_budget,
-            )
+            if mode == "chat":
+                history_budget = max(32, model.context_length - max_new - 32)
+                history = trim_to_token_budget(
+                    f"{prompt} {response}\n",
+                    tokenizer,
+                    history_budget,
+                )
         except Exception as error:
             print(f"[Generation error] {error}")
 
@@ -368,13 +465,28 @@ def parse_args():
     parser.add_argument(
         "--tokenizer",
         type=Path,
-        default=PROJECT_ROOT / "tokenizer" / "tokenizer.json",
-        help="Tokenizer JSON; defaults to the active tokenizer v2",
+        default=None,
+        help="Tokenizer JSON; by default it is detected from checkpoint metadata",
     )
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
     parser.add_argument(
+        "--quantization",
+        choices=QUANTIZATION_MODES,
+        default="none",
+        help="Optional inference-only quantization (dynamic-int8 requires CPU)",
+    )
+    parser.add_argument(
         "--prompt",
         help="Run one raw completion and exit instead of opening interactive chat",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("base", "chat"),
+        default="base",
+        help=(
+            "base performs raw continuation (default); chat adds User/Aethyx role "
+            "markers and should only be used with an instruction-tuned checkpoint"
+        ),
     )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=40)
@@ -390,7 +502,7 @@ def parse_args():
 def main():
     args = parse_args()
     print("=" * 60)
-    print("AethyxLM - tokenizer v2 checkpoint interface")
+    print("AethyxLM - checkpoint interface")
     print("=" * 60)
 
     checkpoint_path = select_checkpoint(
@@ -404,6 +516,7 @@ def main():
         checkpoint_path,
         args.tokenizer,
         device,
+        quantization=args.quantization,
     )
 
     if args.prompt is not None:
@@ -430,7 +543,7 @@ def main():
             safe_print(continuation)
         return
 
-    interactive_chat(
+    interactive_session(
         model,
         tokenizer,
         temperature=args.temperature,
@@ -441,6 +554,7 @@ def main():
         no_repeat_ngram_size=args.no_repeat_ngram_size,
         max_new=args.max_new,
         stream=args.stream,
+        mode=args.mode,
     )
 
 

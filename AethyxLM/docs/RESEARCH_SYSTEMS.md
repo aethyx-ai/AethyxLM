@@ -85,11 +85,6 @@ Reusable generation lives in `inference/generation.py`. It provides:
 
 `chat.py` uses this engine and retains checkpoint selection and tokenizer-fingerprint verification.
 
-## Context representation research
-
-The isolated research package is `context_lab/`. It contains graph extraction, verbatim-risk guards, visual-page planning, benchmark metrics, and a browser Web Worker reference implementation. See `CONTEXT_COMPRESSION_RESEARCH.md` for the design and limitations.
-
 ## Intentionally excluded
 
 Model export and deployment infrastructure are not part of this phase.
-

@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from evaluation.evaluator import context_compression_metrics, evaluate_language_model
+from evaluation.evaluator import evaluate_language_model
 from model.gpt import GPT
 
 
@@ -26,11 +26,3 @@ def test_language_model_evaluation_reports_tokens_and_perplexity():
     assert metrics.tokens == 16
     assert metrics.batches == 1
     assert metrics.perplexity == pytest.approx(math.exp(metrics.loss))
-
-
-def test_compression_score_keeps_accuracy_and_reduction_separate():
-    metrics = context_compression_metrics(1000, 300, 90, 87, 100)
-    assert metrics.reduction == pytest.approx(0.7)
-    assert metrics.baseline_accuracy == pytest.approx(0.9)
-    assert metrics.compressed_accuracy == pytest.approx(0.87)
-    assert metrics.accuracy_retention == pytest.approx(0.87 / 0.9)

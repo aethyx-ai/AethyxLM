@@ -1,18 +1,16 @@
 # AethyxLM
 
-AethyxLM is an Indian language-model research platform focused on building efficient, capable transformer systems and rethinking how models consume context.
+AethyxLM is an Indian language-model research platform focused on building efficient, capable transformer systems.
 
 ## Vision
 
-Modern language-model applications repeatedly transmit large volumes of prompts, histories, tool definitions, documents, and structured state as ordinary text tokens. AethyxLM's primary research direction is a local **context compiler** that transforms this information into a denser machine-readable representation before it reaches the model.
-
-The representation is not assumed to be visual. Research candidates include structured graphs, spatial or visual context pages, learned latent memory, and hybrid text representations. The objective is to preserve useful information and task quality while reducing token usage, bandwidth, memory pressure, and inference cost. Compression targets remain hypotheses until validated experimentally.
+AethyxLM aims to become a future Indian frontier-model platform. One long-term research priority is improving how language models handle large amounts of context while preserving useful information and response quality. The underlying research and implementation remain private and experimental.
 
 ## Current Model
 
-The current AethyxLM implementation is a compact decoder-only transformer and a stable foundation for continued architecture research. Its production research configuration has approximately **31.2 million parameters** and includes:
+The current AethyxLM implementation is a decoder-only transformer and a stable foundation for continued architecture research. Its v3 research configuration has approximately **137.6 million parameters** and includes:
 
-- A 32,000-token custom ByteLevel BPE tokenizer
+- A 48,000-token custom ByteLevel BPE tokenizer
 - Grouped-query attention with fused QKV projections
 - Scaled dot-product attention
 - Rotary positional embeddings
@@ -20,9 +18,7 @@ The current AethyxLM implementation is a compact decoder-only transformer and a 
 - Query/key normalization
 - Gradient checkpointing and mixed-precision support
 - Sliding-window and periodic global-attention support
-- Experimental interfaces for future compressed-context adapters
-
-The compressed-context layer is still an active research direction, not a claimed production result. The language-model pipeline remains modular so that multimodal, graph-based, retrieval, latent-memory, and persistent-agent-state approaches can be evaluated without destabilizing the core model.
+- KV-cached generation with configurable sampling controls
 
 ## Project Status
 

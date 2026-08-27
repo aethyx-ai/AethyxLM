@@ -57,7 +57,6 @@ class GPT(nn.Module):
         self.use_sdpa = config.get('use_sdpa', True)
         self.qk_norm = config.get('qk_norm', False)
         self.gradient_checkpointing = config.get('gradient_checkpointing', False)
-        self.context_adapter_config = config.get('context_adapter', {})
         self.sliding_window = config.get('sliding_window')
         self.global_attention_interval = config.get('global_attention_interval', 0)
 
@@ -117,31 +116,6 @@ class GPT(nn.Module):
                 for layer_index in range(self.num_layers)
             ]
         )
-
-        self.context_adapter = None
-        self.context_cross_attention = nn.ModuleDict()
-        if self.context_adapter_config.get("enabled", False):
-            from model.context_adapter import ContextCrossAttention, LatentContextAdapter
-
-            adapter_heads = self.context_adapter_config.get("num_heads", self.num_heads)
-            self.context_adapter = LatentContextAdapter(
-                input_dim=self.context_adapter_config.get("input_dim", self.embed_dim),
-                embed_dim=self.embed_dim,
-                num_latents=self.context_adapter_config.get("num_latents", 64),
-                num_heads=adapter_heads,
-                num_types=self.context_adapter_config.get("num_types", 16),
-                depth=self.context_adapter_config.get("depth", 2),
-                dropout=self.dropout_rate,
-            )
-            cross_layers = self.context_adapter_config.get(
-                "cross_attention_layers", [self.num_layers - 1]
-            )
-            for layer_index in cross_layers:
-                if not 0 <= int(layer_index) < self.num_layers:
-                    raise ValueError("context cross-attention layer index is out of range")
-                self.context_cross_attention[str(int(layer_index))] = ContextCrossAttention(
-                    self.embed_dim, adapter_heads, self.dropout_rate
-                )
 
         # ----------------------------------------
         # Final Layer Normalization
@@ -215,11 +189,6 @@ class GPT(nn.Module):
         print(f"Parameters:          {sum(p.numel() for p in self.parameters()):,}")
         print("=" * 60)
 
-    def encode_context(self, context_features, context_type_ids=None, context_mask=None):
-        if self.context_adapter is None:
-            raise RuntimeError("context_adapter is not enabled in this model")
-        return self.context_adapter(context_features, context_type_ids, context_mask)
-
     def load_compatible_state_dict(self, state_dict, strict: bool = True):
         """Load current and legacy checkpoints without persisting causal masks."""
         cleaned = {
@@ -234,10 +203,6 @@ class GPT(nn.Module):
         input_ids: torch.Tensor,
         kv_cache=None,
         use_cache: bool = False,
-        context_features=None,
-        context_type_ids=None,
-        context_mask=None,
-        context_latents=None,
     ):
         """
         Forward pass.
@@ -279,15 +244,6 @@ class GPT(nn.Module):
 
         x = self.dropout(x)
 
-        if context_features is not None and context_latents is not None:
-            raise ValueError("provide context_features or context_latents, not both")
-        if context_features is not None:
-            context_latents = self.encode_context(
-                context_features, context_type_ids, context_mask
-            )
-        if context_latents is not None and self.context_adapter is None:
-            raise RuntimeError("context latents require an enabled context_adapter")
-
         # ----------------------------------------
         # Transformer Blocks
         # ----------------------------------------
@@ -304,10 +260,6 @@ class GPT(nn.Module):
                     x = checkpoint(layer, x, use_reentrant=False)
                 else:
                     x = layer(x)
-            layer_key = str(index)
-            if context_latents is not None and layer_key in self.context_cross_attention:
-                x = self.context_cross_attention[layer_key](x, context_latents)
-
         # ----------------------------------------
         # Final LayerNorm
         # ----------------------------------------

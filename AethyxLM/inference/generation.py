@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
+from typing import Callable, Literal, Optional, Sequence
 
 import torch
+
+
+InferenceMode = Literal["base", "chat"]
+CHAT_STOP_STRINGS = ("\nUser:", "User:", "\nAethyx:", "Aethyx:")
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,50 @@ class GenerationResult:
     text: str
     token_ids: tuple[int, ...]
     finish_reason: str
+
+
+def format_inference_prompt(
+    text: str,
+    mode: InferenceMode,
+    history: str = "",
+) -> str:
+    """Apply the one canonical prompt contract used by chat and evaluation."""
+    if mode == "base":
+        return text
+    if mode == "chat":
+        return f"{history}User: {text}\nAethyx:"
+    raise ValueError(f"Unsupported inference mode: {mode}")
+
+
+def stop_strings_for_mode(mode: InferenceMode) -> tuple[str, ...]:
+    """Return the canonical decoding stops for an inference mode."""
+    if mode == "base":
+        return ()
+    if mode == "chat":
+        return CHAT_STOP_STRINGS
+    raise ValueError(f"Unsupported inference mode: {mode}")
+
+
+def sampling_for_decoding(
+    decoding: Literal["default", "greedy", "sampled"] = "default",
+    *,
+    max_new_tokens: int = 200,
+) -> SamplingConfig:
+    """Create named sampling profiles so CLIs and evaluations cannot drift."""
+    if decoding == "default":
+        return SamplingConfig(max_new_tokens=max_new_tokens)
+    if decoding == "greedy":
+        return SamplingConfig(
+            max_new_tokens=max_new_tokens,
+            temperature=0.0,
+            top_k=0,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            no_repeat_ngram_size=0,
+        )
+    if decoding == "sampled":
+        return SamplingConfig(max_new_tokens=max_new_tokens)
+    raise ValueError(f"Unsupported decoding profile: {decoding}")
 
 
 def _apply_repetition_penalty(
@@ -133,6 +181,32 @@ def _truncate_stop_strings(text: str, stop_strings: Sequence[str]):
     return text[: min(positions)].rstrip(), True
 
 
+def _sample_token(
+    logits: torch.Tensor,
+    token_ids: Sequence[int],
+    sampling: SamplingConfig,
+) -> torch.Tensor:
+    logits = _apply_repetition_penalty(
+        logits,
+        token_ids[-sampling.repetition_window :],
+        sampling.repetition_penalty,
+    )
+    logits = _apply_no_repeat_ngram(
+        logits,
+        token_ids,
+        sampling.no_repeat_ngram_size,
+    )
+    if sampling.temperature == 0:
+        return logits.argmax(dim=-1, keepdim=True)
+    logits = _apply_probability_filters(
+        logits / sampling.temperature,
+        sampling.top_k,
+        sampling.top_p,
+        sampling.min_p,
+    )
+    return torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
+
+
 @torch.inference_mode()
 def generate_text(
     model,
@@ -167,24 +241,7 @@ def generate_text(
             if blocked is not None:
                 next_logits[:, blocked] = -float("inf")
 
-        recent = (prompt_ids + generated)[-sampling.repetition_window :]
-        next_logits = _apply_repetition_penalty(
-            next_logits, recent, sampling.repetition_penalty
-        )
-        next_logits = _apply_no_repeat_ngram(
-            next_logits,
-            prompt_ids + generated,
-            sampling.no_repeat_ngram_size,
-        )
-        if sampling.temperature == 0:
-            next_id = next_logits.argmax(dim=-1, keepdim=True)
-        else:
-            next_logits = next_logits / sampling.temperature
-            next_logits = _apply_probability_filters(
-                next_logits, sampling.top_k, sampling.top_p, sampling.min_p
-            )
-            probabilities = torch.softmax(next_logits, dim=-1)
-            next_id = torch.multinomial(probabilities, num_samples=1)
+        next_id = _sample_token(next_logits, prompt_ids + generated, sampling)
 
         token_id = int(next_id.item())
         if tokenizer.eos_id is not None and token_id == tokenizer.eos_id:
@@ -212,3 +269,92 @@ def generate_text(
 
     text, _ = _truncate_stop_strings(tokenizer.decode(generated), stop_strings)
     return GenerationResult(text=text.strip(), token_ids=tuple(generated), finish_reason=finish_reason)
+
+
+@torch.inference_mode()
+def generate_batch_text(
+    model,
+    tokenizer,
+    prompts: Sequence[str],
+    sampling: SamplingConfig | None = None,
+    stop_strings: Sequence[str] = (),
+) -> list[GenerationResult]:
+    """Generate continuations in real batches, bucketing unequal prompt lengths."""
+    sampling = sampling or SamplingConfig()
+    if not prompts:
+        return []
+    context_length = int(model.context_length)
+    encoded = []
+    for prompt in prompts:
+        ids = tokenizer.encode(prompt)
+        if not ids:
+            if tokenizer.bos_id is None:
+                raise ValueError("prompt produced no tokens and tokenizer has no BOS token")
+            ids = [tokenizer.bos_id]
+        encoded.append(ids[-context_length:])
+
+    buckets: dict[int, list[int]] = {}
+    for index, ids in enumerate(encoded):
+        buckets.setdefault(len(ids), []).append(index)
+    results: list[GenerationResult | None] = [None] * len(prompts)
+    device = next(model.parameters()).device
+    model.eval()
+
+    for indices in buckets.values():
+        prompt_rows = [encoded[index] for index in indices]
+        sequence = torch.tensor(prompt_rows, dtype=torch.long, device=device)
+        generated = [[] for _ in indices]
+        finish_reasons = ["length" for _ in indices]
+        finished = [False for _ in indices]
+        logits, cache = model(sequence, use_cache=True)
+
+        for _ in range(sampling.max_new_tokens):
+            next_values = []
+            for row, prompt_ids in enumerate(prompt_rows):
+                if finished[row]:
+                    fallback = tokenizer.eos_id
+                    if fallback is None:
+                        fallback = tokenizer.pad_id if tokenizer.pad_id is not None else 0
+                    next_values.append(int(fallback))
+                    continue
+                row_logits = logits[row : row + 1, -1, :].float()
+                for blocked in (tokenizer.pad_id, tokenizer.bos_id):
+                    if blocked is not None:
+                        row_logits[:, blocked] = -float("inf")
+                next_id = _sample_token(
+                    row_logits, prompt_ids + generated[row], sampling
+                )
+                token_id = int(next_id.item())
+                next_values.append(token_id)
+                if tokenizer.eos_id is not None and token_id == tokenizer.eos_id:
+                    finish_reasons[row] = "eos"
+                    finished[row] = True
+                    continue
+                generated[row].append(token_id)
+                _, stopped = _truncate_stop_strings(
+                    tokenizer.decode(generated[row]), stop_strings
+                )
+                if stopped:
+                    finish_reasons[row] = "stop"
+                    finished[row] = True
+
+            if all(finished):
+                break
+            next_tensor = torch.tensor(next_values, device=device)[:, None]
+            sequence = torch.cat((sequence, next_tensor), dim=1)
+            cached_length = int(cache[0][0].size(2))
+            if cached_length >= context_length:
+                logits, cache = model(sequence[:, -context_length:], use_cache=True)
+            else:
+                logits, cache = model(next_tensor, kv_cache=cache, use_cache=True)
+
+        for row, original_index in enumerate(indices):
+            text, _ = _truncate_stop_strings(
+                tokenizer.decode(generated[row]), stop_strings
+            )
+            results[original_index] = GenerationResult(
+                text=text.strip(),
+                token_ids=tuple(generated[row]),
+                finish_reason=finish_reasons[row],
+            )
+    return [result for result in results if result is not None]
