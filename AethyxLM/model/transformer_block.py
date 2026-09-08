@@ -109,7 +109,7 @@ class TransformerBlock(nn.Module):
         )
 
         # Self-Attention
-        self.attention = MultiHeadSelfAttention(
+        attention_kwargs = dict(
             embed_dim=embed_dim,
             num_heads=num_heads,
             num_kv_heads=num_kv_heads,
@@ -124,8 +124,13 @@ class TransformerBlock(nn.Module):
             use_sdpa=use_sdpa,
             qk_norm=qk_norm,
             sliding_window=sliding_window,
-            native_gqa=native_gqa,
         )
+        # Keep the default path compatible with older embedded attention
+        # implementations used by long-running cloud notebooks.  The optional
+        # native GQA argument is only required when the feature is enabled.
+        if native_gqa:
+            attention_kwargs["native_gqa"] = True
+        self.attention = MultiHeadSelfAttention(**attention_kwargs)
 
         # Second Normalization
         self.norm2 = build_normalization(
