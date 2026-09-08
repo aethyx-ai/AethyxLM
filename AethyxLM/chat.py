@@ -33,7 +33,7 @@ from inference.prompt_contract import (
 )
 from inference.retrieval import EvidenceIndex, EvidencePassage, format_evidence
 from inference.quantization import QUANTIZATION_MODES, quantize_model_for_inference
-from inference.tools import ToolController, route_arithmetic_question
+from inference.tools import ToolController
 
 
 def checkpoint_step(path: Path) -> Optional[int]:
@@ -387,8 +387,9 @@ def interactive_session(
     print(f"\n{label} mode started. Commands: /temp, /topk, /ngram, /max, /clear, /help, /quit")
     if tool_controller is not None:
         print(
-            "Validated tools enabled. Standalone arithmetic is calculated automatically. "
-            'Manual: /tool {"tool":"calculator","arguments":{"expression":"2+2"}}'
+            "Restricted Python tool enabled. Manual: "
+            '/tool {"tool":"python","arguments":{"language":"python-restricted",'
+            '"code":"print(sum(range(1, 11)))"}}'
         )
     if mode == "base":
         print("Each entry is continued as raw text; no User/Aethyx role markers are added.")
@@ -464,24 +465,6 @@ def interactive_session(
             except ValueError:
                 print("Invalid command value. Type /help.")
             continue
-
-        if tool_controller is not None:
-            automatic_result = route_arithmetic_question(user_text, tool_controller)
-            if automatic_result is not None:
-                answer = str(automatic_result["result"])
-                safe_print(f"\nAethyx: {answer}")
-                if mode == "chat":
-                    direct_prompt = prompt_contract.format_user_turn(user_text, history)
-                    history_budget = max(32, model.context_length - max_new - 32)
-                    history, history_dropped = trim_serialized_history(
-                        prompt_contract.append_assistant_turn(direct_prompt, answer),
-                        tokenizer,
-                        history_budget,
-                        prompt_contract.name,
-                    )
-                    if history_dropped:
-                        print(f"[Removed {history_dropped} tokens in complete older turns]")
-                continue
 
         prompt_text = user_text
         if evidence_index is not None:
@@ -653,17 +636,9 @@ def parse_args():
         help="Task-specific decoding defaults; custom uses the individual sampling flags",
     )
     parser.add_argument(
-        "--enable-tools",
-        action="store_true",
-        help=(
-            "Enable automatic routing for clear standalone arithmetic and manual "
-            "/tool calculator calls in interactive mode"
-        ),
-    )
-    parser.add_argument(
         "--enable-code-tool",
         action="store_true",
-        help="Also enable restricted Python execution; implies --enable-tools",
+        help="Enable explicit restricted Python tool calls in interactive mode",
     )
     parser.add_argument(
         "--evidence-file",
@@ -781,7 +756,7 @@ def main():
         prompt_contract=prompt_contract,
         tool_controller=(
             ToolController(allow_code=args.enable_code_tool)
-            if args.enable_tools or args.enable_code_tool
+            if args.enable_code_tool
             else None
         ),
         evidence_index=evidence_index,

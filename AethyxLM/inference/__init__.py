@@ -8,11 +8,7 @@ from inference.generation import (
 )
 from inference.prompt_contract import PromptContract, resolve_prompt_contract
 from inference.retrieval import EvidenceIndex, EvidencePassage
-from inference.tools import (
-    ToolController,
-    extract_arithmetic_expression,
-    route_arithmetic_question,
-)
+from inference.tools import ToolController
 
 __all__ = [
     "GenerationResult",
@@ -24,6 +20,4 @@ __all__ = [
     "EvidenceIndex",
     "EvidencePassage",
     "ToolController",
-    "extract_arithmetic_expression",
-    "route_arithmetic_question",
 ]

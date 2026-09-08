@@ -125,16 +125,8 @@ entailed by a cited passage.
 `inference/tools.py` implements a strict tool-call envelope:
 
 ```json
-{"tool": "calculator", "arguments": {"expression": "17 * 23"}}
+{"tool": "python", "arguments": {"language": "python-restricted", "code": "print(sum(range(10)))"}}
 ```
-
-The calculator parses a bounded arithmetic grammar with Python's AST and
-`Decimal`. It does not use `eval`, accept names or permit function calls.
-When calculator tools are enabled, the interactive interface detects clear
-standalone arithmetic such as `What is 17 x 23?` and returns the validated
-result directly. The detector uses an anchored grammar and falls through to
-normal generation for prose, variables, units, dates, identifiers and invalid
-operations. Explicit `/tool` calculator requests remain available.
 
 A restricted Python backend is available behind an explicit command-line flag.
 It applies an AST allowlist, blocks imports and attribute access, exposes only a
@@ -178,7 +170,7 @@ tuple versus preallocated decoding. `benchmark_quantization.py` measures
 latency, serialized size, module coverage, logit error, cosine similarity and
 top-1 agreement. Both scripts deliberately use short bounded runs.
 
-The public model, inference, evaluation and SFT suite passed 151 tests. The
+The public model, inference, evaluation and SFT suite passed 131 tests. The
 bounded local verification used CPU execution; deployment CUDA performance
 remains to be measured.
 

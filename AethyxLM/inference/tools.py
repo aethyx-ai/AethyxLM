@@ -1,4 +1,4 @@
-"""Validated local tool calls for arithmetic and tightly restricted Python snippets."""
+"""Validated local tool calls for tightly restricted Python snippets."""
 
 from __future__ import annotations
 
@@ -6,131 +6,16 @@ import ast
 import json
 import math
 import os
-import re
 import signal
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from decimal import Decimal, DivisionByZero, InvalidOperation
 from typing import Any, Mapping
 
 
 class ToolCallError(ValueError):
     pass
-
-
-_ARITHMETIC_WRAPPER = re.compile(
-    r"^\s*(?:what\s+is|what's|calculate|compute|evaluate|solve)"
-    r"(?:\s+the\s+(?:value|result)\s+of)?\s*:?\s*(?P<expression>.+?)\s*\??\s*$",
-    re.IGNORECASE,
-)
-_DATE_LIKE = re.compile(r"^\d{1,4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,4}$")
-_IDENTIFIER_LIKE = re.compile(r"^\d{3,}(?:\s*-\s*\d{2,})+$")
-_NUMERIC_MULTIPLICATION = re.compile(
-    r"(?<=\d)\s*[xX×]\s*(?=[+-]?(?:\d|\.\d))"
-)
-
-
-def extract_arithmetic_expression(text: str) -> str | None:
-    """Extract an unambiguous standalone arithmetic request.
-
-    This intentionally accepts only a complete expression or a small allowlist of
-    question wrappers. Prose containing arithmetic, units, dates, identifiers,
-    variables, and URLs falls through to normal model generation.
-    """
-    if not isinstance(text, str):
-        return None
-    candidate = text.strip()
-    if not candidate or len(candidate) > 256 or "\n" in candidate:
-        return None
-
-    wrapped = _ARITHMETIC_WRAPPER.fullmatch(candidate)
-    expression = wrapped.group("expression").strip() if wrapped else candidate
-    if expression.endswith("?"):
-        expression = expression[:-1].rstrip()
-    if not expression or _DATE_LIKE.fullmatch(expression) or _IDENTIFIER_LIKE.fullmatch(expression):
-        return None
-
-    # Treat x as multiplication only when both adjacent operands are numeric.
-    expression = _NUMERIC_MULTIPLICATION.sub("*", expression)
-    if re.search(r"[xX×]", expression):
-        return None
-    if not re.fullmatch(r"[\d\s.+\-*/%()]+", expression):
-        return None
-
-    try:
-        tree = ast.parse(expression, mode="eval")
-    except SyntaxError:
-        return None
-    if not any(isinstance(node, ast.BinOp) for node in ast.walk(tree)):
-        return None
-    return expression
-
-
-def route_arithmetic_question(
-    text: str, controller: "ToolController"
-) -> dict[str, Any] | None:
-    """Execute a clear arithmetic request, or return ``None`` to fall through."""
-    expression = extract_arithmetic_expression(text)
-    if expression is None:
-        return None
-    result = controller.execute(
-        {"tool": "calculator", "arguments": {"expression": expression}}
-    )
-    return result if result.get("ok") else None
-
-
-def _decimal(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ToolCallError("calculator accepts numeric literals only")
-    return Decimal(str(value))
-
-
-def calculate(expression: str) -> str:
-    """Evaluate a bounded arithmetic grammar without eval or arbitrary calls."""
-    if not isinstance(expression, str) or not expression.strip() or len(expression) > 256:
-        raise ToolCallError("expression must contain 1-256 characters")
-    try:
-        tree = ast.parse(expression, mode="eval")
-    except SyntaxError as error:
-        raise ToolCallError("invalid arithmetic expression") from error
-
-    def visit(node, depth=0):
-        if depth > 24:
-            raise ToolCallError("expression is too deeply nested")
-        if isinstance(node, ast.Expression):
-            return visit(node.body, depth + 1)
-        if isinstance(node, ast.Constant):
-            return _decimal(node.value)
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-            value = visit(node.operand, depth + 1)
-            return value if isinstance(node.op, ast.UAdd) else -value
-        if isinstance(node, ast.BinOp):
-            left, right = visit(node.left, depth + 1), visit(node.right, depth + 1)
-            if isinstance(node.op, ast.Add): result = left + right
-            elif isinstance(node.op, ast.Sub): result = left - right
-            elif isinstance(node.op, ast.Mult): result = left * right
-            elif isinstance(node.op, ast.Div): result = left / right
-            elif isinstance(node.op, ast.FloorDiv): result = left // right
-            elif isinstance(node.op, ast.Mod): result = left % right
-            elif isinstance(node.op, ast.Pow):
-                if right != right.to_integral_value() or abs(right) > 12:
-                    raise ToolCallError("exponent must be an integer from -12 to 12")
-                result = left ** int(right)
-            else:
-                raise ToolCallError("unsupported calculator operator")
-            if not result.is_finite() or abs(result) > Decimal("1e100"):
-                raise ToolCallError("calculator result is outside the allowed range")
-            return result
-        raise ToolCallError("calculator permits only numbers and + - * / // % **")
-
-    try:
-        result = visit(tree)
-    except (DivisionByZero, InvalidOperation, ZeroDivisionError) as error:
-        raise ToolCallError("invalid arithmetic operation") from error
-    rendered = format(result.normalize(), "f")
-    return "0" if Decimal(rendered) == 0 else rendered
 
 
 _FORBIDDEN_CODE_NODES = (
@@ -261,9 +146,9 @@ def parse_tool_call(payload: str | Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, Mapping) or set(payload) != {"tool", "arguments"}:
         raise ToolCallError("tool call requires exactly tool and arguments")
     tool, arguments = payload["tool"], payload["arguments"]
-    if tool not in {"calculator", "python"} or not isinstance(arguments, Mapping):
+    if tool != "python" or not isinstance(arguments, Mapping):
         raise ToolCallError("unsupported tool or arguments")
-    expected = {"expression"} if tool == "calculator" else {"code", "language"}
+    expected = {"code", "language"}
     if set(arguments) != expected:
         raise ToolCallError(f"{tool} arguments must be exactly {sorted(expected)}")
     if tool == "python" and arguments["language"] != "python-restricted":
@@ -287,11 +172,6 @@ class ToolController:
                 "message": str(error),
                 "retry_allowed": malformed_attempt < self.malformed_retries,
             }
-        if call["tool"] == "calculator":
-            try:
-                return {"ok": True, "tool": "calculator", "result": calculate(call["arguments"]["expression"])}
-            except ToolCallError as error:
-                return {"ok": False, "tool": "calculator", "error": "invalid_expression", "message": str(error)}
         if not self.allow_code:
             return {"ok": False, "tool": "python", "error": "disabled"}
         try:
