@@ -1,11 +1,12 @@
 import json
 
+import pytest
 import torch
 from torch.utils.data import DataLoader
 
 from model.gpt import GPT
 from scripts import prepare_sft_bundle
-from scripts.prepare_sft_data import normalize_record, stable_key
+from scripts.prepare_sft_data import normalize_record, stable_key, stable_prompt_key
 from tokenizer.tokenizer import AethyxTokenizer
 from training.sft_dataset import SFTDataset, encode_conversation
 from training.trainer import Trainer
@@ -80,6 +81,52 @@ def test_sft_normalizes_sharegpt_and_masks_non_assistant_tokens(tmp_path):
     assert len(ids) == len(labels)
     assert tokenizer.token_to_id("<USER>") is not None
     assert tokenizer.token_to_id("<ASSISTANT>") is not None
+
+
+def test_sft_normalizes_mapped_fields_and_cleans_gsm8k_markup():
+    record = normalize_record(
+        {"question": "What is 2 + 2?", "answer": "2 + 2 = <<2+2=4>>4\n#### 4"},
+        {
+            "prompt_field": "question",
+            "response_field": "answer",
+            "answer_cleanup": "gsm8k",
+        },
+    )
+    assert record["messages"][0]["content"] == "What is 2 + 2?"
+    assert "<<" not in record["messages"][1]["content"]
+    assert "Therefore, the answer is 4." in record["messages"][1]["content"]
+
+
+def test_prompt_key_ignores_alternate_answers():
+    first = {
+        "messages": [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "A"},
+        ]
+    }
+    second = {
+        "messages": [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "B"},
+        ]
+    }
+    assert stable_prompt_key(first) == stable_prompt_key(second)
+    assert stable_key(first) != stable_key(second)
+
+
+def test_sft_dataset_rejects_overlength_examples(tmp_path):
+    tokenizer = AethyxTokenizer()
+    record = {
+        "messages": [
+            {"role": "user", "content": "Explain this"},
+            {"role": "assistant", "content": "word " * 200},
+        ]
+    }
+    path = tmp_path / "too_long.jsonl"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    dataset = SFTDataset(path, tokenizer, context_length=16)
+    with pytest.raises(ValueError, match="exceeding"):
+        dataset[0]
 
 
 def test_sft_dataset_runs_one_assistant_masked_optimizer_step(tmp_path):

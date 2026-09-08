@@ -46,6 +46,7 @@ AethyxLM/output/
 AethyxLM/tmp/
 AethyxLM/evaluation/results/*.json
 output/
+Aethyx_Artifacts/
 tmp/
 Research/
 Papers/

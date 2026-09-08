@@ -101,6 +101,7 @@ class Trainer:
         run_id: Optional[str] = None,
         checkpoint_backup: Optional[dict] = None,
         xla_world_size: int = 1,
+        inference_config: Optional[dict] = None,
     ):
         self.model = model
         self.is_distributed = dist.is_available() and dist.is_initialized()
@@ -141,6 +142,7 @@ class Trainer:
         self.tokenizer_sha256 = tokenizer_sha256
         self.eval_batches = eval_batches
         self.tokenizer_path = tokenizer_path
+        self.inference_config = dict(inference_config or {})
         self.log_interval = log_interval
         self.eval_interval = eval_interval
         self.save_interval = save_interval
@@ -483,6 +485,7 @@ class Trainer:
                         else None
                     ),
                 },
+                "inference": getattr(self, "inference_config", {}),
                 "model": {
                     "vocab_size": model.vocab_size,
                     "context_length": model.context_length,
@@ -506,6 +509,7 @@ class Trainer:
                     "gradient_checkpointing": model.gradient_checkpointing,
                     "sliding_window": model.sliding_window,
                     "global_attention_interval": model.global_attention_interval,
+                    "native_gqa": model.native_gqa,
                 }
             }
         }

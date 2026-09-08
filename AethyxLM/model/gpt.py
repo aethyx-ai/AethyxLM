@@ -59,6 +59,7 @@ class GPT(nn.Module):
         self.gradient_checkpointing = config.get('gradient_checkpointing', False)
         self.sliding_window = config.get('sliding_window')
         self.global_attention_interval = config.get('global_attention_interval', 0)
+        self.native_gqa = config.get('native_gqa', False)
 
         # ----------------------------------------
         # Token Embedding
@@ -112,6 +113,7 @@ class GPT(nn.Module):
                         and (layer_index + 1) % self.global_attention_interval == 0
                         else self.sliding_window
                     ),
+                    native_gqa=self.native_gqa,
                 )
                 for layer_index in range(self.num_layers)
             ]
@@ -203,6 +205,8 @@ class GPT(nn.Module):
         input_ids: torch.Tensor,
         kv_cache=None,
         use_cache: bool = False,
+        logits_mode: str = "all",
+        cache_capacity: int = None,
     ):
         """
         Forward pass.
@@ -252,7 +256,12 @@ class GPT(nn.Module):
         for index, layer in enumerate(self.layers):
             layer_cache = None if kv_cache is None else kv_cache[index]
             if use_cache:
-                x, present = layer(x, kv_cache=layer_cache, use_cache=True)
+                x, present = layer(
+                    x,
+                    kv_cache=layer_cache,
+                    use_cache=True,
+                    cache_capacity=cache_capacity,
+                )
                 presents.append(present)
             else:
                 if self.gradient_checkpointing and self.training:
@@ -270,6 +279,10 @@ class GPT(nn.Module):
         # Project to Vocabulary
         # ----------------------------------------
 
+        if logits_mode == "last":
+            x = x[:, -1:, :]
+        elif logits_mode != "all":
+            raise ValueError("logits_mode must be 'all' or 'last'")
         logits = self.lm_head(x)
 
         return (logits, presents) if use_cache else logits

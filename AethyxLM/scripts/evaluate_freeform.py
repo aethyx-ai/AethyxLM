@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from chat import load_model_and_tokenizer, resolve_device
 from evaluation.freeform_suite import evaluate_freeform_cases
+from inference.prompt_contract import PROMPT_CONTRACTS, resolve_inference_mode, resolve_prompt_contract
 
 
 def parse_seeds(value: str) -> tuple[int, ...]:
@@ -27,7 +28,10 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tokenizer", type=Path)
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
-    parser.add_argument("--prompt-mode", choices=("base", "chat", "both"), default="both")
+    parser.add_argument("--prompt-mode", choices=("auto", "base", "chat", "both"), default="auto")
+    parser.add_argument(
+        "--prompt-contract", choices=("auto", *PROMPT_CONTRACTS), default="auto"
+    )
     parser.add_argument("--max-new", type=int, default=24)
     parser.add_argument("--seeds", default="42,43,44")
     args = parser.parse_args()
@@ -36,7 +40,23 @@ def main() -> None:
     model, tokenizer, checkpoint = load_model_and_tokenizer(
         args.checkpoint.resolve(), args.tokenizer, device
     )
-    modes = ("base", "chat") if args.prompt_mode == "both" else (args.prompt_mode,)
+    checkpoint_config = checkpoint.get("config", {})
+    inferred_mode = resolve_inference_mode("auto", checkpoint_config)
+    modes = (
+        ("base", "chat")
+        if args.prompt_mode == "both"
+        else (inferred_mode,)
+        if args.prompt_mode == "auto"
+        else (args.prompt_mode,)
+    )
+    contracts = {
+        mode: resolve_prompt_contract(
+            mode,
+            checkpoint_config,
+            None if args.prompt_contract == "auto" else args.prompt_contract,
+        )
+        for mode in modes
+    }
     result = {
         "checkpoint": str(args.checkpoint.resolve()),
         "step": checkpoint.get("step"),
@@ -48,6 +68,7 @@ def main() -> None:
                 prompt_mode=mode,
                 max_new_tokens=args.max_new,
                 seeds=parse_seeds(args.seeds),
+                prompt_contract=contracts[mode].name,
             )
             for mode in modes
         },

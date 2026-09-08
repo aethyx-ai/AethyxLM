@@ -78,6 +78,7 @@ class TransformerBlock(nn.Module):
         use_sdpa: bool = True,
         qk_norm: bool = False,
         sliding_window: int = None,
+        native_gqa: bool = False,
     ):
         super().__init__()
 
@@ -123,6 +124,7 @@ class TransformerBlock(nn.Module):
             use_sdpa=use_sdpa,
             qk_norm=qk_norm,
             sliding_window=sliding_window,
+            native_gqa=native_gqa,
         )
 
         # Second Normalization
@@ -146,6 +148,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         kv_cache=None,
         use_cache: bool = False,
+        cache_capacity: int = None,
     ):
         """
         Forward pass.
@@ -167,7 +170,9 @@ class TransformerBlock(nn.Module):
 
         x = self.norm1(x)
 
-        attention_result = self.attention(x, kv_cache=kv_cache, use_cache=use_cache)
+        attention_result = self.attention(
+            x, kv_cache=kv_cache, use_cache=use_cache, cache_capacity=cache_capacity
+        )
         if use_cache:
             x, present = attention_result
         else:

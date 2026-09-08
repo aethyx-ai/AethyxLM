@@ -58,7 +58,9 @@ def evaluate_passkey_retrieval(
                 sequence = torch.tensor([prompt], device=device)
                 predicted = []
                 for expected_token in answer:
-                    logits = model(sequence[:, -model.context_length :])
+                    logits = model(
+                        sequence[:, -model.context_length :], logits_mode="last"
+                    )
                     next_token = int(logits[:, -1].argmax(-1).item())
                     predicted.append(next_token)
                     # Teacher forcing isolates retrieval from cascading generation errors.

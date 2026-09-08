@@ -69,6 +69,17 @@ def test_sdpa_matches_manual_attention():
     )
 
 
+def test_native_gqa_matches_expanded_head_fallback_when_supported():
+    torch.manual_seed(13)
+    expanded = GPT(config=tiny_config(native_gqa=False)).eval()
+    native = GPT(config=tiny_config(native_gqa=True)).eval()
+    native.load_state_dict(expanded.state_dict())
+    tokens = torch.randint(0, expanded.vocab_size, (1, 9))
+    torch.testing.assert_close(
+        native(tokens), expanded(tokens), atol=2e-5, rtol=2e-5
+    )
+
+
 def test_invalid_gqa_ratio_is_rejected():
     try:
         MultiHeadSelfAttention(embed_dim=32, num_heads=4, num_kv_heads=3)

@@ -20,9 +20,20 @@ from inference.generation import (
     SamplingConfig,
     format_inference_prompt as _format_inference_prompt,
     generate_text,
+    sampling_for_decoding,
     stop_strings_for_mode,
 )
+from inference.prompt_contract import (
+    PROMPT_CONTRACTS,
+    PromptContract,
+    resolve_prompt_contract,
+    resolve_inference_mode,
+    trim_serialized_history,
+    critical_prefix_token_count,
+)
+from inference.retrieval import EvidenceIndex, EvidencePassage, format_evidence
 from inference.quantization import QUANTIZATION_MODES, quantize_model_for_inference
+from inference.tools import ToolController, route_arithmetic_question
 
 
 def checkpoint_step(path: Path) -> Optional[int]:
@@ -240,6 +251,15 @@ def load_model_and_tokenizer(
     model = GPT(vocab_size=expected_vocab, config=model_config)
     model.load_compatible_state_dict(state_dict, strict=True)
     model.to(device)
+    native_gqa_enabled = False
+    if device.startswith("cuda"):
+        for layer in model.layers:
+            attention = layer.attention
+            if attention.num_kv_heads != attention.num_heads and attention.use_sdpa:
+                attention.native_gqa = "enable_gqa" in (
+                    torch.nn.functional.scaled_dot_product_attention.__doc__ or ""
+                )
+                native_gqa_enabled |= attention.native_gqa
     model = quantize_model_for_inference(model, quantization, device)
     model.eval()
 
@@ -253,6 +273,7 @@ def load_model_and_tokenizer(
     print(f"Vocabulary: {tokenizer.vocab_size:,} ({tokenizer_check})")
     print(f"Context length: {model.context_length:,}")
     print(f"Quantization: {quantization}")
+    print(f"Native GQA inference path: {'enabled with fallback' if native_gqa_enabled else 'disabled'}")
     return model, tokenizer, checkpoint
 
 
@@ -280,7 +301,10 @@ def generate(
     no_repeat_ngram_size: int = 4,
     stop_strings: tuple[str, ...] = (),
     on_text=None,
-) -> str:
+    return_result: bool = False,
+    cache_strategy: str = "auto",
+    preserve_prefix_tokens: int = 0,
+):
     """Compatibility wrapper around the reusable inference engine."""
     result = generate_text(
         model,
@@ -297,17 +321,20 @@ def generate(
         ),
         stop_strings=stop_strings,
         on_text=on_text,
+        cache_strategy=cache_strategy,
+        preserve_prefix_tokens=preserve_prefix_tokens,
     )
-    return result.text
+    return result if return_result else result.text
 
 
 def format_inference_prompt(
     text: str,
     mode: str,
     history: str = "",
+    prompt_contract: str = "legacy-chat-v1",
 ) -> str:
     """Compatibility wrapper for the canonical inference prompt formatter."""
-    return _format_inference_prompt(text, mode, history)
+    return _format_inference_prompt(text, mode, history, prompt_contract)
 
 
 def trim_to_token_budget(
@@ -349,14 +376,29 @@ def interactive_session(
     max_new: int,
     stream: bool,
     mode: str,
+    prompt_contract: PromptContract,
+    tool_controller: ToolController | None = None,
+    evidence_index: EvidenceIndex | None = None,
+    retrieve_k: int = 4,
+    cache_strategy: str = "auto",
+    system_prompt: str | None = None,
 ):
     label = "Chat" if mode == "chat" else "Base completion"
     print(f"\n{label} mode started. Commands: /temp, /topk, /ngram, /max, /clear, /help, /quit")
+    if tool_controller is not None:
+        print(
+            "Validated tools enabled. Standalone arithmetic is calculated automatically. "
+            'Manual: /tool {"tool":"calculator","arguments":{"expression":"2+2"}}'
+        )
     if mode == "base":
         print("Each entry is continued as raw text; no User/Aethyx role markers are added.")
     else:
         print("Chat formatting is intended only for an instruction-tuned checkpoint.")
-    history = ""
+    history = (
+        prompt_contract.format_system(system_prompt or "")
+        if mode == "chat"
+        else ""
+    )
 
     while True:
         try:
@@ -372,6 +414,19 @@ def interactive_session(
             return
 
         if user_text.startswith("/"):
+            if user_text.startswith("/tool ") and tool_controller is not None:
+                result = tool_controller.execute(user_text[len("/tool ") :])
+                rendered = prompt_contract.format_tool_result(
+                    str(result.get("tool", "invalid")), result
+                )
+                safe_print(rendered.strip())
+                if mode == "chat":
+                    history = trim_to_token_budget(
+                        history + rendered,
+                        tokenizer,
+                        max(32, model.context_length - max_new - 32),
+                    )
+                continue
             parts = user_text.split(maxsplit=1)
             command = parts[0].lower()
             value = parts[1] if len(parts) == 2 else None
@@ -410,12 +465,42 @@ def interactive_session(
                 print("Invalid command value. Type /help.")
             continue
 
-        prompt = format_inference_prompt(user_text, mode, history)
-        stop_strings = stop_strings_for_mode(mode)
+        if tool_controller is not None:
+            automatic_result = route_arithmetic_question(user_text, tool_controller)
+            if automatic_result is not None:
+                answer = str(automatic_result["result"])
+                safe_print(f"\nAethyx: {answer}")
+                if mode == "chat":
+                    direct_prompt = prompt_contract.format_user_turn(user_text, history)
+                    history_budget = max(32, model.context_length - max_new - 32)
+                    history, history_dropped = trim_serialized_history(
+                        prompt_contract.append_assistant_turn(direct_prompt, answer),
+                        tokenizer,
+                        history_budget,
+                        prompt_contract.name,
+                    )
+                    if history_dropped:
+                        print(f"[Removed {history_dropped} tokens in complete older turns]")
+                continue
+
+        prompt_text = user_text
+        if evidence_index is not None:
+            passages = evidence_index.search(user_text, limit=retrieve_k)
+            evidence = format_evidence(
+                passages, tokenizer, max_tokens=max(32, model.context_length // 3)
+            )
+            if evidence:
+                prompt_text = (
+                    "Use the evidence below and cite its SOURCE ID. Preserve identifiers "
+                    f"and numbers exactly.\n\n{evidence}\n\nQuestion: {user_text}"
+                )
+                print("[Retrieved: " + ", ".join(item.source_id for item in passages) + "]")
+        prompt = prompt_contract.format_user_turn(prompt_text, history)
+        stop_strings = prompt_contract.stop_strings
         try:
-            if stream:
+            if stream and tool_controller is None:
                 print("\nAethyx: ", end="", flush=True)
-            response = generate(
+            result = generate(
                 model,
                 tokenizer,
                 prompt,
@@ -427,19 +512,78 @@ def interactive_session(
                 repetition_penalty=repetition_penalty,
                 no_repeat_ngram_size=no_repeat_ngram_size,
                 stop_strings=stop_strings,
-                on_text=stream_write if stream else None,
+                on_text=stream_write if stream and tool_controller is None else None,
+                return_result=True,
+                cache_strategy=cache_strategy,
+                preserve_prefix_tokens=critical_prefix_token_count(
+                    prompt, tokenizer, prompt_contract.name
+                ),
             )
+            response = result.text
+            continuation_prompt = prompt
+            if tool_controller is not None:
+                visible_parts = []
+                for tool_attempt in range(2):
+                    emitted_call = tool_controller.execute_model_output(
+                        response, malformed_attempt=tool_attempt
+                    )
+                    if emitted_call is None:
+                        visible_parts.append(response)
+                        break
+                    if emitted_call["assistant_text"]:
+                        visible_parts.append(emitted_call["assistant_text"])
+                    tool_result = emitted_call["result"]
+                    rendered = prompt_contract.format_tool_result(
+                        str(tool_result.get("tool", "invalid")), tool_result
+                    )
+                    continuation_prompt = prompt_contract.continue_after_tool(
+                        continuation_prompt, response, rendered
+                    )
+                    result = generate(
+                        model,
+                        tokenizer,
+                        continuation_prompt,
+                        max_new=max_new,
+                        temperature=temperature,
+                        top_k=top_k,
+                        top_p=top_p,
+                        min_p=min_p,
+                        repetition_penalty=repetition_penalty,
+                        no_repeat_ngram_size=no_repeat_ngram_size,
+                        stop_strings=stop_strings,
+                        return_result=True,
+                        cache_strategy=cache_strategy,
+                        preserve_prefix_tokens=critical_prefix_token_count(
+                            continuation_prompt, tokenizer, prompt_contract.name
+                        ),
+                    )
+                    response = result.text
+                else:
+                    visible_parts.append(response.split("<TOOL_CALL>", 1)[0].rstrip())
+                response = " ".join(part for part in visible_parts if part).strip()
             if stream:
-                print()
+                if tool_controller is not None:
+                    safe_print(f"\nAethyx: {response}")
+                else:
+                    print()
             else:
                 safe_print(f"\nAethyx: {response}")
             if mode == "chat":
+                if result.dropped_prompt_tokens:
+                    print(
+                        f"[Context budget removed {result.dropped_prompt_tokens} older prompt tokens]"
+                    )
                 history_budget = max(32, model.context_length - max_new - 32)
-                history = trim_to_token_budget(
-                    f"{prompt} {response}\n",
+                history, history_dropped = trim_serialized_history(
+                    prompt_contract.append_assistant_turn(
+                        continuation_prompt, response
+                    ),
                     tokenizer,
                     history_budget,
+                    prompt_contract.name,
                 )
+                if history_dropped:
+                    print(f"[Removed {history_dropped} tokens in complete older turns]")
         except Exception as error:
             print(f"[Generation error] {error}")
 
@@ -477,16 +621,22 @@ def parse_args():
     )
     parser.add_argument(
         "--prompt",
-        help="Run one raw completion and exit instead of opening interactive chat",
+        help="Run one completion with the selected mode and exit",
     )
     parser.add_argument(
         "--mode",
-        choices=("base", "chat"),
-        default="base",
+        choices=("auto", "base", "chat"),
+        default="auto",
         help=(
-            "base performs raw continuation (default); chat adds User/Aethyx role "
-            "markers and should only be used with an instruction-tuned checkpoint"
+            "auto uses checkpoint metadata; base performs raw continuation; chat "
+            "requires a declared or explicitly selected prompt contract"
         ),
+    )
+    parser.add_argument(
+        "--prompt-contract",
+        choices=("auto", *PROMPT_CONTRACTS),
+        default="auto",
+        help="Prompt syntax; auto reads instruction-tuned checkpoint metadata",
     )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=40)
@@ -496,11 +646,54 @@ def parse_args():
     parser.add_argument("--no-repeat-ngram-size", type=int, default=4)
     parser.add_argument("--max-new", type=int, default=200)
     parser.add_argument("--stream", action="store_true")
+    parser.add_argument(
+        "--sampling-profile",
+        choices=("custom", "prose", "code", "exact"),
+        default="custom",
+        help="Task-specific decoding defaults; custom uses the individual sampling flags",
+    )
+    parser.add_argument(
+        "--enable-tools",
+        action="store_true",
+        help=(
+            "Enable automatic routing for clear standalone arithmetic and manual "
+            "/tool calculator calls in interactive mode"
+        ),
+    )
+    parser.add_argument(
+        "--enable-code-tool",
+        action="store_true",
+        help="Also enable restricted Python execution; implies --enable-tools",
+    )
+    parser.add_argument(
+        "--evidence-file",
+        type=Path,
+        action="append",
+        default=[],
+        help="UTF-8 evidence text file; may be repeated",
+    )
+    parser.add_argument("--retrieve-k", type=int, default=4)
+    parser.add_argument("--system-prompt", help="Optional system instruction for chat mode")
+    parser.add_argument(
+        "--cache-strategy",
+        choices=("auto", "preallocated", "tuple"),
+        default="auto",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.sampling_profile != "custom":
+        profile = sampling_for_decoding(
+            args.sampling_profile, max_new_tokens=args.max_new
+        )
+        args.temperature = profile.temperature
+        args.top_k = profile.top_k
+        args.top_p = profile.top_p
+        args.min_p = profile.min_p
+        args.repetition_penalty = profile.repetition_penalty
+        args.no_repeat_ngram_size = profile.no_repeat_ngram_size
     print("=" * 60)
     print("AethyxLM - checkpoint interface")
     print("=" * 60)
@@ -512,22 +705,44 @@ def main():
     )
     device = resolve_device(args.device)
     print(f"Device: {device}")
-    model, tokenizer, _ = load_model_and_tokenizer(
+    model, tokenizer, checkpoint = load_model_and_tokenizer(
         checkpoint_path,
         args.tokenizer,
         device,
         quantization=args.quantization,
     )
+    checkpoint_config = checkpoint.get("config", {})
+    mode = resolve_inference_mode(args.mode, checkpoint_config)
+    prompt_contract = resolve_prompt_contract(
+        mode,
+        checkpoint_config,
+        None if args.prompt_contract == "auto" else args.prompt_contract,
+    )
+    evidence_index = None
+    if args.evidence_file:
+        passages = []
+        for path in args.evidence_file:
+            resolved = path.expanduser().resolve()
+            passages.append(EvidencePassage(resolved.name, resolved.read_text(encoding="utf-8")))
+        evidence_index = EvidenceIndex(passages)
 
     if args.prompt is not None:
         if args.stream:
             callback = stream_write
         else:
             callback = None
-        continuation = generate(
+        one_shot_history = (
+            prompt_contract.format_system(args.system_prompt or "")
+            if mode == "chat"
+            else ""
+        )
+        formatted_prompt = prompt_contract.format_user_turn(
+            args.prompt, one_shot_history
+        )
+        result = generate(
             model,
             tokenizer,
-            args.prompt,
+            formatted_prompt,
             max_new=args.max_new,
             temperature=args.temperature,
             top_k=args.top_k,
@@ -536,11 +751,19 @@ def main():
             repetition_penalty=args.repetition_penalty,
             no_repeat_ngram_size=args.no_repeat_ngram_size,
             on_text=callback,
+            stop_strings=prompt_contract.stop_strings,
+            return_result=True,
+            cache_strategy=args.cache_strategy,
+            preserve_prefix_tokens=critical_prefix_token_count(
+                formatted_prompt, tokenizer, prompt_contract.name
+            ),
         )
         if args.stream:
             print()
         else:
-            safe_print(continuation)
+            safe_print(result.text)
+        if result.dropped_prompt_tokens:
+            print(f"[Dropped {result.dropped_prompt_tokens} prompt tokens to fit context]")
         return
 
     interactive_session(
@@ -554,7 +777,17 @@ def main():
         no_repeat_ngram_size=args.no_repeat_ngram_size,
         max_new=args.max_new,
         stream=args.stream,
-        mode=args.mode,
+        mode=mode,
+        prompt_contract=prompt_contract,
+        tool_controller=(
+            ToolController(allow_code=args.enable_code_tool)
+            if args.enable_tools or args.enable_code_tool
+            else None
+        ),
+        evidence_index=evidence_index,
+        retrieve_k=max(1, args.retrieve_k),
+        cache_strategy=args.cache_strategy,
+        system_prompt=args.system_prompt,
     )
 
 

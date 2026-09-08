@@ -53,6 +53,11 @@ def main():
         action="store_true",
         help="Rebuild the streamed SFT data bundle before training",
     )
+    parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Prepare and validate the SFT bundle without loading a base checkpoint",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -65,6 +70,9 @@ def main():
         from scripts.prepare_sft_bundle import prepare_from_config
 
         prepare_from_config(args.config, force=args.force_prepare)
+    if args.prepare_only:
+        print(f"[SFT] Data is ready at {train_path.parent}")
+        return
 
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested, but this PyTorch build cannot access a GPU")
@@ -76,7 +84,9 @@ def main():
         or base.get("config", {}).get("tokenizer_sha256")
     )
     if expected_hash and expected_hash != tokenizer.sha256:
-        raise RuntimeError("Base checkpoint tokenizer does not match tokenizer v2")
+        raise RuntimeError(
+            "Base checkpoint tokenizer fingerprint does not match the configured tokenizer"
+        )
     state = base["model_state_dict"]
     model_config = GPT._infer_checkpoint_config(
         state, base.get("config", {}).get("model", {})
@@ -140,6 +150,9 @@ def main():
         save_interval=checkpoint["save_interval"],
         generate_interval=0,
         device=args.device,
+        inference_config=config.get(
+            "inference", {"prompt_contract": "aethyx-sft-v1"}
+        ),
     )
     resume_path = resolve(args.resume) if args.resume else None
     if args.auto_resume and resume_path is None:

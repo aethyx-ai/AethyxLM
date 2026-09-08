@@ -8,12 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
-
-ROLE_TOKENS = {
-    "system": "<SYSTEM>",
-    "user": "<USER>",
-    "assistant": "<ASSISTANT>",
-}
+from inference.prompt_contract import ROLE_TOKENS, serialize_messages
 
 
 def validate_messages(messages):
@@ -48,21 +43,7 @@ def validate_messages(messages):
 def encode_conversation(messages, tokenizer):
     """Encode role-tagged turns and supervise assistant content only."""
     validate_messages(messages)
-    input_ids = []
-    labels = []
-    for message in messages:
-        role = message["role"]
-        prefix = f"{ROLE_TOKENS[role]}\n"
-        prefix_ids = tokenizer.encode(prefix)
-        content_ids = tokenizer.encode(message["content"].strip() + "\n")
-        input_ids.extend(prefix_ids)
-        labels.extend([-100] * len(prefix_ids))
-        input_ids.extend(content_ids)
-        labels.extend(content_ids if role == "assistant" else [-100] * len(content_ids))
-        if role == "assistant" and tokenizer.eos_id is not None:
-            input_ids.append(tokenizer.eos_id)
-            labels.append(tokenizer.eos_id)
-    return input_ids, labels
+    return serialize_messages(messages, tokenizer)
 
 
 class SFTDataset(Dataset):
@@ -84,7 +65,7 @@ class SFTDataset(Dataset):
                     raise ValueError(
                         f"Invalid SFT record at {self.path}:{line_number}"
                     ) from error
-                self.examples.append(record["messages"])
+                self.examples.append((line_number, record["messages"]))
         if not self.examples:
             raise ValueError(f"No SFT examples found in {self.path}")
         if tokenizer.pad_id is None:
@@ -94,13 +75,14 @@ class SFTDataset(Dataset):
         return len(self.examples)
 
     def __getitem__(self, index):
-        input_ids, labels = encode_conversation(
-            self.examples[index], self.tokenizer
-        )
+        line_number, messages = self.examples[index]
+        input_ids, labels = encode_conversation(messages, self.tokenizer)
         required = self.context_length + 1
         if len(input_ids) > required:
-            input_ids = input_ids[-required:]
-            labels = labels[-required:]
+            raise ValueError(
+                f"SFT record at {self.path}:{line_number} has {len(input_ids)} tokens, "
+                f"exceeding the {required}-token limit; rebuild the data bundle"
+            )
         padding = required - len(input_ids)
         if padding:
             input_ids.extend([self.tokenizer.pad_id] * padding)

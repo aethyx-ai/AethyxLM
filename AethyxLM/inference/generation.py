@@ -7,9 +7,16 @@ from typing import Callable, Literal, Optional, Sequence
 
 import torch
 
+from inference.prompt_contract import (
+    LEGACY_CHAT_CONTRACT,
+    get_prompt_contract,
+)
+
 
 InferenceMode = Literal["base", "chat"]
-CHAT_STOP_STRINGS = ("\nUser:", "User:", "\nAethyx:", "Aethyx:")
+ContextOverflowPolicy = Literal["reserve", "stop", "recompute"]
+CacheStrategy = Literal["auto", "preallocated", "tuple"]
+CHAT_STOP_STRINGS = get_prompt_contract(LEGACY_CHAT_CONTRACT).stop_strings
 
 
 @dataclass(frozen=True)
@@ -47,32 +54,39 @@ class GenerationResult:
     text: str
     token_ids: tuple[int, ...]
     finish_reason: str
+    prompt_tokens: int = 0
+    dropped_prompt_tokens: int = 0
 
 
 def format_inference_prompt(
     text: str,
     mode: InferenceMode,
     history: str = "",
+    prompt_contract: str = LEGACY_CHAT_CONTRACT,
 ) -> str:
     """Apply the one canonical prompt contract used by chat and evaluation."""
     if mode == "base":
         return text
     if mode == "chat":
-        return f"{history}User: {text}\nAethyx:"
+        return get_prompt_contract(prompt_contract).format_user_turn(text, history)
     raise ValueError(f"Unsupported inference mode: {mode}")
 
 
-def stop_strings_for_mode(mode: InferenceMode) -> tuple[str, ...]:
+def stop_strings_for_mode(
+    mode: InferenceMode, prompt_contract: str = LEGACY_CHAT_CONTRACT
+) -> tuple[str, ...]:
     """Return the canonical decoding stops for an inference mode."""
     if mode == "base":
         return ()
     if mode == "chat":
-        return CHAT_STOP_STRINGS
+        return get_prompt_contract(prompt_contract).stop_strings
     raise ValueError(f"Unsupported inference mode: {mode}")
 
 
 def sampling_for_decoding(
-    decoding: Literal["default", "greedy", "sampled"] = "default",
+    decoding: Literal[
+        "default", "greedy", "sampled", "prose", "code", "exact"
+    ] = "default",
     *,
     max_new_tokens: int = 200,
 ) -> SamplingConfig:
@@ -90,6 +104,26 @@ def sampling_for_decoding(
         )
     if decoding == "sampled":
         return SamplingConfig(max_new_tokens=max_new_tokens)
+    if decoding == "prose":
+        return SamplingConfig(max_new_tokens=max_new_tokens)
+    if decoding == "code":
+        return SamplingConfig(
+            max_new_tokens=max_new_tokens,
+            temperature=0.35,
+            top_k=50,
+            top_p=0.95,
+            repetition_penalty=1.03,
+            no_repeat_ngram_size=0,
+        )
+    if decoding == "exact":
+        return SamplingConfig(
+            max_new_tokens=max_new_tokens,
+            temperature=0.0,
+            top_k=0,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            no_repeat_ngram_size=0,
+        )
     raise ValueError(f"Unsupported decoding profile: {decoding}")
 
 
@@ -207,6 +241,29 @@ def _sample_token(
     return torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
 
 
+def _fit_prompt_to_budget(
+    prompt_ids: Sequence[int],
+    context_length: int,
+    max_new_tokens: int,
+    preserve_prefix_tokens: int,
+):
+    """Reserve generation room while retaining an explicit critical prefix."""
+    budget = max(1, context_length - min(max_new_tokens, context_length - 1))
+    if len(prompt_ids) <= budget:
+        return list(prompt_ids), 0
+    prefix_count = min(max(0, preserve_prefix_tokens), budget, len(prompt_ids))
+    suffix_count = budget - prefix_count
+    fitted = list(prompt_ids[:prefix_count])
+    if suffix_count:
+        fitted.extend(prompt_ids[-suffix_count:])
+    return fitted, len(prompt_ids) - len(fitted)
+
+
+def _cache_length(cache) -> int:
+    first = cache[0]
+    return int(first.length if hasattr(first, "length") else first[0].size(2))
+
+
 @torch.inference_mode()
 def generate_text(
     model,
@@ -215,10 +272,14 @@ def generate_text(
     sampling: SamplingConfig | None = None,
     stop_strings: Sequence[str] = (),
     on_text: Optional[Callable[[str], None]] = None,
+    overflow_policy: ContextOverflowPolicy = "reserve",
+    preserve_prefix_tokens: int = 0,
+    cache_strategy: CacheStrategy = "auto",
 ) -> GenerationResult:
     """Generate one continuation and optionally stream decoded text deltas."""
     sampling = sampling or SamplingConfig()
-    prompt_ids = tokenizer.encode(prompt)
+    original_prompt_ids = tokenizer.encode(prompt)
+    prompt_ids = list(original_prompt_ids)
     if not prompt_ids:
         if tokenizer.bos_id is None:
             raise ValueError("prompt produced no tokens and tokenizer has no BOS token")
@@ -226,14 +287,31 @@ def generate_text(
 
     device = next(model.parameters()).device
     context_length = int(model.context_length)
-    sequence = torch.tensor(
-        [prompt_ids[-context_length:]], dtype=torch.long, device=device
-    )
+    if overflow_policy == "reserve":
+        prompt_ids, dropped_prompt_tokens = _fit_prompt_to_budget(
+            prompt_ids, context_length, sampling.max_new_tokens, preserve_prefix_tokens
+        )
+    elif overflow_policy in {"stop", "recompute"}:
+        dropped_prompt_tokens = max(0, len(prompt_ids) - context_length)
+        prompt_ids = prompt_ids[-context_length:]
+    else:
+        raise ValueError(f"Unsupported context overflow policy: {overflow_policy}")
+    sequence = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     generated: list[int] = []
     emitted_text = ""
     finish_reason = "length"
     model.eval()
-    logits, cache = model(sequence, use_cache=True)
+    if cache_strategy not in {"auto", "preallocated", "tuple"}:
+        raise ValueError(f"Unsupported cache strategy: {cache_strategy}")
+    preallocate = cache_strategy == "preallocated" or (
+        cache_strategy == "auto" and device.type == "cuda"
+    )
+    cache_capacity = (
+        context_length if overflow_policy != "recompute" and preallocate else None
+    )
+    logits, cache = model(
+        sequence, use_cache=True, logits_mode="last", cache_capacity=cache_capacity
+    )
 
     for _ in range(sampling.max_new_tokens):
         next_logits = logits[:, -1, :].float()
@@ -241,7 +319,7 @@ def generate_text(
             if blocked is not None:
                 next_logits[:, blocked] = -float("inf")
 
-        next_id = _sample_token(next_logits, prompt_ids + generated, sampling)
+        next_id = _sample_token(next_logits, generated, sampling)
 
         token_id = int(next_id.item())
         if tokenizer.eos_id is not None and token_id == tokenizer.eos_id:
@@ -261,14 +339,35 @@ def generate_text(
             finish_reason = "stop"
             break
 
-        cached_length = int(cache[0][0].size(2))
+        if (
+            overflow_policy != "recompute"
+            and len(prompt_ids) + len(generated) >= context_length
+        ):
+            finish_reason = "context_limit"
+            break
+
+        cached_length = _cache_length(cache)
         if cached_length >= context_length:
-            logits, cache = model(sequence[:, -context_length:], use_cache=True)
+            if overflow_policy == "recompute":
+                logits, cache = model(
+                    sequence[:, -context_length:], use_cache=True, logits_mode="last"
+                )
+            else:
+                finish_reason = "context_limit"
+                break
         else:
-            logits, cache = model(next_id, kv_cache=cache, use_cache=True)
+            logits, cache = model(
+                next_id, kv_cache=cache, use_cache=True, logits_mode="last"
+            )
 
     text, _ = _truncate_stop_strings(tokenizer.decode(generated), stop_strings)
-    return GenerationResult(text=text.strip(), token_ids=tuple(generated), finish_reason=finish_reason)
+    return GenerationResult(
+        text=text.strip(),
+        token_ids=tuple(generated),
+        finish_reason=finish_reason,
+        prompt_tokens=len(original_prompt_ids),
+        dropped_prompt_tokens=dropped_prompt_tokens,
+    )
 
 
 @torch.inference_mode()
@@ -278,6 +377,8 @@ def generate_batch_text(
     prompts: Sequence[str],
     sampling: SamplingConfig | None = None,
     stop_strings: Sequence[str] = (),
+    overflow_policy: ContextOverflowPolicy = "reserve",
+    cache_strategy: CacheStrategy = "auto",
 ) -> list[GenerationResult]:
     """Generate continuations in real batches, bucketing unequal prompt lengths."""
     sampling = sampling or SamplingConfig()
@@ -291,7 +392,15 @@ def generate_batch_text(
             if tokenizer.bos_id is None:
                 raise ValueError("prompt produced no tokens and tokenizer has no BOS token")
             ids = [tokenizer.bos_id]
-        encoded.append(ids[-context_length:])
+        if overflow_policy == "reserve":
+            ids, _ = _fit_prompt_to_budget(
+                ids, context_length, sampling.max_new_tokens, preserve_prefix_tokens=0
+            )
+        elif overflow_policy in {"stop", "recompute"}:
+            ids = ids[-context_length:]
+        else:
+            raise ValueError(f"Unsupported context overflow policy: {overflow_policy}")
+        encoded.append(ids)
 
     buckets: dict[int, list[int]] = {}
     for index, ids in enumerate(encoded):
@@ -306,7 +415,17 @@ def generate_batch_text(
         generated = [[] for _ in indices]
         finish_reasons = ["length" for _ in indices]
         finished = [False for _ in indices]
-        logits, cache = model(sequence, use_cache=True)
+        if cache_strategy not in {"auto", "preallocated", "tuple"}:
+            raise ValueError(f"Unsupported cache strategy: {cache_strategy}")
+        preallocate = cache_strategy == "preallocated" or (
+            cache_strategy == "auto" and device.type == "cuda"
+        )
+        cache_capacity = (
+            context_length if overflow_policy != "recompute" and preallocate else None
+        )
+        logits, cache = model(
+            sequence, use_cache=True, logits_mode="last", cache_capacity=cache_capacity
+        )
 
         for _ in range(sampling.max_new_tokens):
             next_values = []
@@ -322,7 +441,7 @@ def generate_batch_text(
                     if blocked is not None:
                         row_logits[:, blocked] = -float("inf")
                 next_id = _sample_token(
-                    row_logits, prompt_ids + generated[row], sampling
+                    row_logits, generated[row], sampling
                 )
                 token_id = int(next_id.item())
                 next_values.append(token_id)
@@ -342,11 +461,28 @@ def generate_batch_text(
                 break
             next_tensor = torch.tensor(next_values, device=device)[:, None]
             sequence = torch.cat((sequence, next_tensor), dim=1)
-            cached_length = int(cache[0][0].size(2))
+            if overflow_policy != "recompute" and sequence.size(1) >= context_length:
+                for row in range(len(finished)):
+                    if not finished[row]:
+                        finish_reasons[row] = "context_limit"
+                        finished[row] = True
+                break
+            cached_length = _cache_length(cache)
             if cached_length >= context_length:
-                logits, cache = model(sequence[:, -context_length:], use_cache=True)
+                if overflow_policy == "recompute":
+                    logits, cache = model(
+                        sequence[:, -context_length:], use_cache=True, logits_mode="last"
+                    )
+                else:
+                    for row in range(len(finished)):
+                        if not finished[row]:
+                            finish_reasons[row] = "context_limit"
+                            finished[row] = True
+                    break
             else:
-                logits, cache = model(next_tensor, kv_cache=cache, use_cache=True)
+                logits, cache = model(
+                    next_tensor, kv_cache=cache, use_cache=True, logits_mode="last"
+                )
 
         for row, original_index in enumerate(indices):
             text, _ = _truncate_stop_strings(
@@ -356,5 +492,9 @@ def generate_batch_text(
                 text=text.strip(),
                 token_ids=tuple(generated[row]),
                 finish_reason=finish_reasons[row],
+                prompt_tokens=len(tokenizer.encode(prompts[original_index])),
+                dropped_prompt_tokens=max(
+                    0, len(tokenizer.encode(prompts[original_index])) - len(prompt_rows[row])
+                ),
             )
     return [result for result in results if result is not None]

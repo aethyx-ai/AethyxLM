@@ -1,308 +1,198 @@
-# AethyxLM Modern Transformer Architecture
+# AethyxLM Architecture
 
-> The executable model and JSON configuration are authoritative. Historical
-> benchmark numbers later in this document predate the efficient-attention
-> upgrade and should not be used as current performance claims.
+This document describes the current v3 model and inference runtime. Executable
+code and checkpoint metadata remain authoritative when this document and a
+checkpoint disagree.
 
-## Current efficient baseline
+## Current v3 model
 
-The modern configuration now uses RMSNorm, RoPE, correctly budgeted SwiGLU,
-grouped-query attention (8 query / 2 KV heads), fused QKV projection, PyTorch
-scaled-dot-product attention, bias-free projections, and RoPE-aware KV-cached
-decoding. Training supports gradient checkpointing, BF16-aware AMP, fused
-AdamW, optional z-loss, and a staged context-length curriculum.
+The current research configuration is a decoder-only transformer with roughly
+137.6 million parameters:
 
-For longer-context experiments, layers can use a bounded sliding window with
-periodic full-attention layers. Sliding layers retain only their configured
-window in the KV cache while separately tracking absolute RoPE position. A
-linear RoPE scaling factor is available for controlled continued-pretraining
-experiments; accepting a longer tensor is not treated as proof of long-context
-retrieval quality.
+| Component | v3 configuration |
+|---|---:|
+| Vocabulary | 48,000 tokens (tokenizer v3) |
+| Transformer layers | 16 |
+| Hidden dimension | 768 |
+| Query heads | 12 |
+| Key/value heads | 4 |
+| Feed-forward dimension | 2,048 |
+| Model context | 1,024 tokens |
+| Normalization | RMSNorm |
+| Position encoding | RoPE |
+| Feed-forward block | SwiGLU |
+| Attention implementation | PyTorch SDPA |
+| Projection layout | Fused QKV |
+| Embedding/output weights | Tied |
 
-Legacy checkpoints remain compatible because models without the new config
-keys retain separate Q/K/V projections and one KV head per query head.
+Grouped-query attention reduces the number of cached key/value heads from 12
+to 4. QK normalization controls attention-vector scale. Bias-free projections,
+RMSNorm and SwiGLU provide the current modern baseline. RoPE tables can be
+allocated beyond 1,024 positions, but this does not establish reliable
+understanding beyond the model's evaluated context length.
 
-## Tokenizer generations
+Legacy checkpoint loading reconstructs architectural values from checkpoint
+tensors and metadata. It removes obsolete persistent causal masks while still
+requiring state-dictionary compatibility.
 
-The production `tokenizer/tokenizer.json` is tokenizer v2: a 32K ByteLevel BPE
-trained on a balanced English/Indic corpus. It uses NFKC normalization without
-lowercasing or accent stripping and reserves document, role, tool, context, and
-memory tokens. Pre-32K tokenizers and their matching checkpoints are isolated in
-`archive/legacy_pre_32k`.
+## Inference architecture
 
-## Overview
+### Prompt contracts
 
-This document describes the modern transformer architecture upgrades implemented in AethyxLM, moving from a GPT-2 style architecture to a modern LLM architecture.
+`inference/prompt_contract.py` is the canonical source for serialization used
+by interactive inference, evaluation and supervised fine-tuning data.
 
-## Changes Summary
+Three versioned contracts are supported:
 
-### 1. Architecture Configuration
-Extended `model/config.py` with new architecture options:
-- `normalization`: `"layernorm"` | `"rmsnorm"` (default: `"layernorm"`)
-- `position_encoding`: `"learned"` | `"rope"` (default: `"learned"`)
-- `ffn_type`: `"gelu"` | `"swiglu"` (default: `"gelu"`)
+- `base-v1` sends raw text for continuation.
+- `legacy-chat-v1` uses `User:` and `Aethyx:` text markers.
+- `aethyx-sft-v1` uses `<SYSTEM>`, `<USER>` and `<ASSISTANT>` role tokens.
 
-Added new config constants:
-- `ROPE_BASE = 10000.0` - Base frequency for RoPE
-- `ROPE_MAX_SEQ_LEN = 8192` - Maximum sequence length for RoPE cache
-- `SWIGLU_HIDDEN_MULT = 4` - Hidden dimension multiplier for SwiGLU
+Checkpoints may declare `config.inference.prompt_contract`. Automatic mode only
+selects chat behavior when that metadata explicitly declares a chat contract.
+A metadata-free checkpoint defaults to base completion. This prevents a base
+model from being silently prompted with an instruction format it never
+declared.
 
-### 2. New Modules
+History trimming removes complete oldest turns instead of cutting arbitrary
+token fragments. For the v3 SFT contract, the initial system segment is
+protected when it fits the available budget. Generation results report prompt
+token count, discarded prompt tokens and the finish reason.
 
-#### `model/modules/rmsnorm.py`
-- **RMSNorm**: Root Mean Square Layer Normalization
-- More efficient than LayerNorm (no mean subtraction)
-- Factory function `build_normalization()` for easy switching
+### Logit projection
 
-#### `model/modules/rope.py`
-- **RotaryEmbedding**: Rotary Positional Embeddings (RoPE)
-- Precomputes and caches sin/cos values
-- Automatic cache extension for longer sequences
-- Applies RoPE to Q and K projections only
-- Configurable base frequency and max sequence length
+`GPT.forward()` accepts `logits_mode="all"` for callers that require a logit at
+every position and `logits_mode="last"` for generation. The latter sends only
+the final hidden state through the 48,000-way output projection during prompt
+prefill and cached decoding.
 
-#### `model/modules/feedforward.py`
-- **FeedForward**: Unified FFN module supporting both GELU and SwiGLU
-- **SwiGLU**: `SiLU(x) * Gate(x)` with proper parameter scaling
-- Factory function `build_feedforward()` for easy switching
+On the local 246K v3 checkpoint, the bounded CPU prefill measurement showed
+approximately 1.28x speedup for final-position projection. This is a short host
+measurement and should be repeated on the deployment GPU before being treated
+as a production performance figure.
 
-### 3. Updated Components
+### KV caching and grouped-query attention
 
-#### `model/transformer_block.py`
-- Uses `build_normalization()` for configurable normalization
-- Uses new `FeedForward` module with configurable FFN type
-- Compatible with both LayerNorm/RMSNorm and GELU/SwiGLU
+The attention module supports the original tuple cache and a preallocated
+cache. The preallocated form reserves capacity and writes new key/value states
+into indexed slices, avoiding a full `torch.cat` copy for every decoded token.
 
-#### `model/attention.py`
-- Added RoPE integration
-- Conditional RoPE application based on `position_encoding` config
-- Maintains backward compatibility with learned positional embeddings
+Automatic cache selection currently uses:
 
-#### `model/transformer_block.py`
-- Uses `build_normalization()` for configurable normalization
-- Updated to use new `FeedForward` module
+- tuple caching on CPU, where the bounded local test found preallocation slower;
+- preallocated caching on CUDA, subject to deployment benchmarking;
+- the tuple representation as a compatibility fallback.
 
-#### `model/gpt.py`
-- Supports configurable architecture options
-- Architecture summary printed at initialization
-- Removed learned positional embeddings when using RoPE
-- Added `_init_weights()` for proper weight initialization
-- Added `from_checkpoint()` classmethod for checkpoint loading with architecture validation
-- Architecture summary printed at initialization
+The CUDA path can call SDPA's native grouped-query attention without expanding
+four KV heads to twelve. If the active backend exposes the API but rejects the
+operation, attention disables the native path and falls back to expanded KV
+heads.
 
-#### `model/modules/rmsnorm.py`
-- `RMSNorm` implementation with configurable epsilon
-- `build_normalization()` factory function
+Generation reserves an explicit response budget. The default overflow policy
+stops with `context_limit` rather than repeatedly recomputing a full 1,024-token
+window for every additional token. The reference `recompute` policy remains
+available for compatibility. Dropping cached tokens and rebasing RoPE positions
+is deliberately avoided because it would not be numerically equivalent to the
+original sequence.
 
-#### `model/modules/rope.py`
-- `RotaryEmbedding` class with automatic cache extension
-- `apply_rotary_pos_emb()` helper function
-- `build_rope()` factory function
+### Decoding profiles
 
-#### `model/modules/feedforward.py`
-- `FeedForward` class supporting both GELU and SwiGLU
-- `build_feedforward()` factory function
+The generation runtime provides named sampling profiles for prose, code and
+exact extraction, alongside greedy decoding. Repetition penalties and n-gram
+blocking now inspect generated output rather than the source prompt. This
+allows answers to copy identifiers, numbers, code fragments and evidence from
+the prompt without being penalized merely because those tokens already appear
+in the input.
 
-#### `model/layers.py`
-- Added weight initialization utilities
-- Custom `Linear` layer with configurable initialization
+Batch generation groups equal-length prompts and uses last-position logits and
+the same cache and overflow rules as single-prompt generation.
 
-#### `model/transformer_block.py`
-- Updated to use configurable normalization and FFN type
+## Retrieval
 
-#### `model/attention.py`
-- Added RoPE integration
-- Conditional RoPE application based on config
+`inference/retrieval.py` supplies a small dependency-free local evidence index.
+It uses BM25-style lexical scoring, assigns every passage a stable source ID and
+returns selected passages verbatim. Evidence formatting admits complete
+passages within a token budget instead of truncating names, identifiers or
+numeric values halfway through a passage.
 
-#### `model/gpt.py`
-- Architecture summary printing
-- Configurable positional embeddings (learned vs RoPE)
-- Checkpoint loading with architecture validation
-- Proper weight initialization
+The chat interface can load local evidence, retrieve a bounded number of
+passages and insert source-labelled evidence into the canonical prompt. This is
+a local retrieval baseline; it does not prove that a generated answer is
+entailed by a cited passage.
 
-### 4. Configuration Files
+## Tools
 
-#### `configs/train_config_modern.json`
-Modern architecture configuration:
+`inference/tools.py` implements a strict tool-call envelope:
+
 ```json
-{
-  "model": {
-    "normalization": "rmsnorm",
-    "position_encoding": "rope",
-    "ffn_type": "swiglu",
-    ...
-  }
-}
+{"tool": "calculator", "arguments": {"expression": "17 * 23"}}
 ```
 
-#### `configs/datasets.json`
-Dataset registry for mixed dataset training:
-```json
-{
-  "tinystories": {"train": "data/train.bin", "val": "data/val.bin", "weight": 0.2},
-  "fineweb_edu": {"train": "data/fineweb_train.bin", "val": "data/fineweb_val.bin", "weight": 0.8}
-}
-```
+The calculator parses a bounded arithmetic grammar with Python's AST and
+`Decimal`. It does not use `eval`, accept names or permit function calls.
+When calculator tools are enabled, the interactive interface detects clear
+standalone arithmetic such as `What is 17 x 23?` and returns the validated
+result directly. The detector uses an anchored grammar and falls through to
+normal generation for prose, variables, units, dates, identifiers and invalid
+operations. Explicit `/tool` calculator requests remain available.
 
-### 5. Training Pipeline Updates
+A restricted Python backend is available behind an explicit command-line flag.
+It applies an AST allowlist, blocks imports and attribute access, exposes only a
+small set of pure built-ins, uses an isolated temporary directory and clean
+environment, and limits execution time and output. POSIX systems additionally
+enforce address-space, CPU and process limits. Windows does not provide the
+same memory/process isolation through this backend, so code execution remains
+disabled by default and should not be treated as a strong security boundary on
+Windows.
 
-#### `train.py`
-- Supports mixed dataset loading via `MixedAethyxDataset`
-- Auto-detects config format (legacy vs new)
-- Automatic dataset preparation (TinyStories download, FineWeb-Edu check)
-- DDP support with proper barriers
+Tool requests use an exact JSON schema. Malformed requests have bounded retry
+handling, and structured results are reinserted through the active prompt
+contract for the model's final response. Schema validity only establishes that
+a request is well formed; it does not establish that the selected tool or
+arguments are semantically correct.
 
-#### `dataset/dataset.py`
-- Added `MixedAethyxDataset` for weighted multi-dataset sampling
-- Weighted random sampling from multiple datasets
+## Quantization
 
-### 6. Data Preparation
+`inference/quantization.py` keeps quantization opt-in and CPU-only. It supports
+dynamic INT8 for feed-forward layers or all eligible linear layers and reports
+actual float and quantized module coverage. Custom Aethyx `Linear` subclasses
+are converted into modules supported by the PyTorch dynamic quantizer on a
+copied model.
 
-#### `scripts/prepare_fineweb.py`
-- Streaming FineWeb-Edu dataset download
-- Text cleaning (NFKC normalization, whitespace normalization)
-- SHA256-based deduplication
-- Streaming tokenization (10M token chunks)
-- Binary format output (uint16 memmap)
-- Configurable target size (GB or document count)
-- Metadata generation
+Bounded measurements on the local 246K checkpoint produced:
 
-### 3. Tests
+| Mode | Serialized state size | Result |
+|---|---:|---|
+| Unquantized | approximately 550 MB | Reference |
+| Dynamic INT8, FFN only | approximately 324 MB | Severe numerical drift |
+| Dynamic INT8, full | approximately 285 MB | Severe numerical drift |
 
-Created comprehensive test suite:
-- `tests/test_rmsnorm.py` - RMSNorm correctness
-- `tests/test_rope.py` - RoPE forward, cache, correctness
-- `tests/test_feedforward.py` - GELU/SwiGLU forward, gradients, parameters
+The current INT8 modes reduce storage but are not recommended for this
+checkpoint because the measured output drift is unacceptable. No GPU
+quantization performance claim has been established.
 
-### 2. Benchmarking
+## Benchmarks and verification
 
-Created `benchmark_architecture.py` for comparing:
-- GPT-2 style (LayerNorm + Learned PosEmb + GELU)
-- Modern (RMSNorm + RoPE + SwiGLU)
+`benchmark_inference.py` measures full versus last-position projection and
+tuple versus preallocated decoding. `benchmark_quantization.py` measures
+latency, serialized size, module coverage, logit error, cosine similarity and
+top-1 agreement. Both scripts deliberately use short bounded runs.
 
-Metrics measured:
-- Forward pass latency
-- Training step latency
-- Peak memory usage
-- Training throughput (tokens/sec)
+The public model, inference, evaluation and SFT suite passed 151 tests. The
+bounded local verification used CPU execution; deployment CUDA performance
+remains to be measured.
 
-### 3. Configuration Files
+## Context direction
 
-- `configs/train_config_kaggle.json` - Legacy GPT-2 style config
-- `configs/train_config_modern.json` - Modern architecture config
-- `configs/datasets.json` - Dataset registry with weights
-
-### 4. Testing
-
-All tests pass:
-- RMSNorm: forward pass, normalization correctness, LayerNorm compatibility
-- RoPE: forward pass, output shapes, cache extension, apply_rotary_pos_emb, cache correctness
-- FeedForward: GELU/SwiGLU forward, mathematical correctness, gradient flow, parameter counts
-
-### 5. Benchmark Results (CPU)
-
-| Metric | GPT-2 Style | Modern | Speedup |
-|--------|-------------|--------|---------|
-| Parameters | 1.0M | 8.9M | 8.5x more |
-| Forward Time | 41ms | 174ms | 0.24x |
-| Train Step | 140ms | 606ms | 0.23x |
-| Throughput | 3,670 tok/s | 845 tok/s | 0.23x |
-
-Note: Modern architecture is slower on CPU due to larger model size (8.5M vs 1.0M params) and additional computations (RoPE, SwiGLU). On GPU with proper parallelization, modern architecture typically shows better scaling.
-
-### 5. Usage
-
-#### Training with Modern Architecture
-```bash
-# Prepare the capped multi-source bundle without retaining raw downloads.
-python scripts/prepare_dataset_bundle.py --bundle multilingual_v2_32k
-
-# Resume training from checkpoint
-python train.py --config configs/train_config_modern.json --device cuda
-
-# Or start fresh
-python train.py --config configs/train_config_modern.json --device cuda
-```
-
-#### Training with Legacy Architecture
-```bash
-python train.py --config configs/train_config_kaggle.json --device cuda
-```
-
-### Storage-bounded dataset preparation
-
-`scripts/prepare_streaming_dataset.py` generalizes the FineWeb-Edu pipeline to
-any Hugging Face streaming text source. It normalizes and validates each document,
-performs bounded recent-document deduplication, tokenizes immediately, routes the
-document deterministically to train or validation, and writes exact-size uint16
-binaries. Raw documents are never retained locally.
-
-The production `multilingual_v2_32k` manifest creates a 0.08 GiB remote bundle
-containing FineWeb-Edu, OpenWebMath, Cosmopedia/OpenStax, Cosmopedia/Khan Academy,
-and equal-size Hindi, Bengali, Telugu, Tamil, Marathi, Gujarati, Kannada,
-Malayalam, Punjabi, and Urdu samples. Each source has an isolated prefix, pinned
-upstream revision, durable resume state, physical-size metadata, and tokenizer
-fingerprint sidecars. The retained raw English corpus is separately tokenized
-into `data/train.bin` and `data/val.bin` with the same tokenizer.
-
-Tokenizer v2 with a 32K vocabulary is now the production default. All pre-32K
-checkpoints, binaries, and tokenizer artifacts are isolated under
-`archive/legacy_pre_32k` and must not be mixed into new training runs.
-
-## Mathematical Background
-
-### RMSNorm
-```
-RMS(x) = sqrt(mean(x^2) + eps)
-y = x / RMS(x) * weight
-```
-
-### RoPE
-For position `t` and dimension `i`:
-```
-theta_i = base^(-2i/d)
-R_t = rotation_matrix(t * theta_i)
-q_rot = q * cos(t*theta) + rotate_half(q) * sin(t*theta)
-```
-
-### SwiGLU
-```
-SwiGLU(x) = SiLU(xW_gate) * (xW_value)
-where SiLU(x) = x * sigmoid(x)
-```
+AethyxLM's longer-term direction includes a private context representation and
+compilation layer intended to reduce redundant context while preserving useful
+information. The current transformer remains a stable language-model baseline,
+and claims about compression, longer effective context or retrieval quality
+require benchmark evidence before they are treated as model capabilities.
 
 ## References
 
-## Empirical pilot status (2026-08-09)
-
-These results are bounded engineering pilots, not frontier-model claims:
-
-- CUDA environment: PyTorch `2.11.0+cu130` on an NVIDIA GeForce MX450 (SM 7.5).
-  Memory-efficient SDPA and math execute successfully. This Windows wheel has no
-  FlashAttention kernel, and cuDNN attention does not support SM 7.5.
-- GPU execution benchmark: the modern path reached 3,770 training tokens/s and
-  1.10x cached-decoding speedup in the small 128-token test. Kernel-launch
-  overhead dominates at this scale; see `gpu_benchmark.json`.
-- Tokenizer v2: trained a 32K vocabulary on a bounded 24-variety English/Indic
-  sample. On the in-sample diagnostic it produced 260,981 tokens versus 545,599
-  for the legacy tokenizer, with zero unknown tokens and 100% normalized
-  round-trip. This is not a held-out language-quality estimate.
-- Scaling feasibility: 10.17M and 23.53M configurations completed equal 15,360
-  token CUDA pilots. The 76.98M and 272.54M configurations exceed the safe AdamW
-  capacity of the 2 GB GPU and were capacity-gated.
-- Matched-token architecture pilot: after 51,200 tokens, the 8.09M modern model
-  reached validation loss 4.894 versus 5.041 for the 6.84M classic model, while
-  running slower on this GPU. The differing parameter counts and short budget
-  prevent an intelligence conclusion.
-Reproducible artifacts are `sdpa_backend_probe.json`, `gpu_benchmark.json`,
-`tokenizer/tokenizer_evaluation.json`, `scaling_pilot_gpu.json`,
-and `architecture_quality_pilot_gpu.json`.
-
-The current v3 research configuration is an approximately 137.6M-parameter
-model with 16 layers, 768 dimensions, 12 query heads, 4 KV heads, a 1,024-token
-training context, and a 48,000-token vocabulary.
-
-- [RMSNorm](https://arxiv.org/abs/1910.07467) - Zhang & Sennrich, 2019
-- [RoPE](https://arxiv.org/abs/2104.09864) - Su et al., 2021
-- [SwiGLU](https://arxiv.org/abs/2002.05202) - Shazeer, 2020
-- [Llama 3 Architecture](https://ai.meta.com/blog/meta-llama-3/) - Meta AI, 2024
+- [RMSNorm](https://arxiv.org/abs/1910.07467)
+- [RoPE](https://arxiv.org/abs/2104.09864)
+- [SwiGLU](https://arxiv.org/abs/2002.05202)
+- [PyTorch scaled dot-product attention](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)

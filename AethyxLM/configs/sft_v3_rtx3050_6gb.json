@@ -1,0 +1,116 @@
+{
+  "seed": 42,
+  "base_checkpoint": "checkpoints/v3_kaggle_step_261641/checkpoint_step_261641.pt",
+  "tokenizer": "tokenizer/tokenizer_v3_48k.json",
+  "inference": {
+    "prompt_contract": "aethyx-sft-v1"
+  },
+  "preparation": {
+    "validation_ratio": 0.01,
+    "min_chars": 24,
+    "max_chars": 12000,
+    "min_user_chars": 6,
+    "min_assistant_chars": 12,
+    "max_messages": 16,
+    "max_tokens": 769,
+    "exclude_evaluation_prompts": true,
+    "sources": [
+      {
+        "dataset": "HuggingFaceTB/smol-smoltalk",
+        "revision": "f73fe857d519ff6ac5af2ea67c4d3834da7b8bcc",
+        "split": "train",
+        "limit": 45000,
+        "max_scanned": 180000,
+        "shuffle_buffer": 30000,
+        "license": "Apache-2.0"
+      },
+      {
+        "dataset": "nvidia/Nemotron-Post-Training-Dataset-v1",
+        "revision": "74e23eb6f830fef4a9e96a92f6f6262214cbb9a8",
+        "split": "chat",
+        "include": {"reasoning": "off"},
+        "limit": 40000,
+        "max_scanned": 180000,
+        "shuffle_buffer": 30000,
+        "license": "CC-BY-4.0"
+      },
+      {
+        "dataset": "nvidia/Nemotron-Post-Training-Dataset-v1",
+        "revision": "74e23eb6f830fef4a9e96a92f6f6262214cbb9a8",
+        "split": "stem",
+        "limit": 15000,
+        "max_scanned": 150000,
+        "shuffle_buffer": 30000,
+        "license": "CC-BY-4.0"
+      },
+      {
+        "dataset": "soketlabs/bhasha-sft",
+        "revision": "68073328969e5622e49479faa5f2b2e4ac18950f",
+        "subset": "indic",
+        "split": "train",
+        "limit": 25000,
+        "max_scanned": 125000,
+        "shuffle_buffer": 20000,
+        "license": "mixed: CC-BY-4.0 / Apache-2.0 / MIT; see source metadata"
+      },
+      {
+        "dataset": "m-a-p/CodeFeedback-Filtered-Instruction",
+        "revision": "a08c213a9748c66c15d0225814be80a2e77adf4a",
+        "split": "train",
+        "prompt_field": "query",
+        "response_field": "answer",
+        "include": {"lang": ["python", "javascript", "java", "cpp", "c", "html", "css", "go", "rust", "sql", "shell"]},
+        "limit": 20000,
+        "max_scanned": 160000,
+        "shuffle_buffer": 30000,
+        "license": "Apache-2.0"
+      },
+      {
+        "dataset": "openai/gsm8k",
+        "revision": "740312add88f781978c0658806c59bc2815b9866",
+        "subset": "main",
+        "split": "train",
+        "prompt_field": "question",
+        "response_field": "answer",
+        "answer_cleanup": "gsm8k",
+        "limit": 7000,
+        "max_scanned": 7473,
+        "shuffle_buffer": 7473,
+        "license": "MIT"
+      }
+    ]
+  },
+  "data": {
+    "train": "data/sft_v3/train.jsonl",
+    "validation": "data/sft_v3/validation.jsonl",
+    "context_length": 768,
+    "batch_size": 1,
+    "num_workers": 0
+  },
+  "training": {
+    "learning_rate": 0.000015,
+    "weight_decay": 0.01,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "grad_clip": 1.0,
+    "warmup_steps": 200,
+    "max_steps": 4750,
+    "min_lr_ratio": 0.1,
+    "grad_accum_steps": 32,
+    "use_amp": true,
+    "amp_dtype": "float16",
+    "fused_optimizer": true,
+    "eval_batches": 30
+  },
+  "checkpoint": {
+    "checkpoint_dir": "checkpoints/sft_v3",
+    "milestone_dir": "checkpoints/sft_v3/milestones",
+    "milestone_interval": 1000,
+    "metrics_file": "logs/sft_v3/metrics.jsonl",
+    "log_dir": "logs/sft_v3",
+    "tensorboard_dir": "logs/sft_v3/tensorboard",
+    "log_interval": 20,
+    "eval_interval": 250,
+    "save_interval": 500
+  }
+}

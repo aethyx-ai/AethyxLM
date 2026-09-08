@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -39,15 +40,39 @@ def iter_records(path: Path):
     yield from payload
 
 
-def normalize_record(record):
+def _clean_answer(text: str, cleanup: str | None) -> str:
+    if cleanup is None:
+        return text
+    if cleanup == "gsm8k":
+        text = re.sub(r"<<[^<>]*>>", "", text)
+        text = re.sub(
+            r"(?:^|\n)####\s*(.+?)\s*$",
+            lambda match: f"\nTherefore, the answer is {match.group(1)}.",
+            text,
+        )
+        return text
+    raise ValueError(f"unsupported answer cleanup: {cleanup}")
+
+
+def normalize_record(record, source: dict | None = None):
+    source = source or {}
     if isinstance(record.get("messages"), list):
         raw_messages = record["messages"]
     elif isinstance(record.get("conversations"), list):
         raw_messages = record["conversations"]
-    elif isinstance(record.get("prompt"), str) and isinstance(record.get("response"), str):
+    elif isinstance(record.get(source.get("prompt_field", "prompt")), str) and isinstance(
+        record.get(source.get("response_field", "response")), str
+    ):
+        prompt_field = source.get("prompt_field", "prompt")
+        response_field = source.get("response_field", "response")
         raw_messages = [
-            {"role": "user", "content": record["prompt"]},
-            {"role": "assistant", "content": record["response"]},
+            {"role": "user", "content": record[prompt_field]},
+            {
+                "role": "assistant",
+                "content": _clean_answer(
+                    record[response_field], source.get("answer_cleanup")
+                ),
+            },
         ]
     else:
         raise ValueError("record has no supported conversation fields")
@@ -66,20 +91,57 @@ def normalize_record(record):
     return {"messages": messages}
 
 
-def quality_reason(record, min_chars: int, max_chars: int):
+def quality_reason(
+    record,
+    min_chars: int,
+    max_chars: int,
+    *,
+    min_user_chars: int = 1,
+    min_assistant_chars: int = 1,
+    max_messages: int = 32,
+):
+    messages = record["messages"]
+    if len(messages) > max_messages:
+        return "too_many_messages"
     text = "\n".join(message["content"] for message in record["messages"])
     if len(text) < min_chars:
         return "too_short"
     if len(text) > max_chars:
         return "too_long"
+    user_text = "\n".join(
+        message["content"] for message in messages if message["role"] == "user"
+    )
+    assistant_text = "\n".join(
+        message["content"] for message in messages if message["role"] == "assistant"
+    )
+    if len(user_text) < min_user_chars:
+        return "user_too_short"
+    if len(assistant_text) < min_assistant_chars:
+        return "assistant_too_short"
     words = text.lower().split()
     if len(words) >= 20 and len(set(words)) / len(words) < 0.15:
         return "high_repetition"
+    lines = [line.strip().casefold() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 8 and len(set(lines)) / len(lines) < 0.5:
+        return "repeated_lines"
     return None
 
 
 def stable_key(record):
     canonical = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def stable_prompt_key(record):
+    """Hash the instruction side so alternate answers cannot cross data splits."""
+    prompt = [
+        {"role": message["role"], "content": " ".join(message["content"].split())}
+        for message in record["messages"]
+        if message["role"] != "assistant"
+    ]
+    canonical = json.dumps(
+        prompt, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

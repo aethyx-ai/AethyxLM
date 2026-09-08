@@ -80,9 +80,11 @@ def score_generated_answer(generation: str, answers: Sequence[str]) -> dict:
     }
 
 
-def format_case_prompt(case: FreeFormCase, prompt_mode: str) -> str:
+def format_case_prompt(
+    case: FreeFormCase, prompt_mode: str, prompt_contract: str = "legacy-chat-v1"
+) -> str:
     text = case.base_prompt if prompt_mode == "base" else case.question
-    return format_inference_prompt(text, prompt_mode)
+    return format_inference_prompt(text, prompt_mode, prompt_contract=prompt_contract)
 
 
 @torch.no_grad()
@@ -94,6 +96,7 @@ def evaluate_freeform_cases(
     prompt_mode: str = "base",
     max_new_tokens: int = 24,
     seeds: Sequence[int] = (42, 43, 44),
+    prompt_contract: str = "legacy-chat-v1",
 ) -> dict:
     """Run greedy plus seeded sampled generations and report each score honestly."""
     cases = tuple(cases)
@@ -102,7 +105,7 @@ def evaluate_freeform_cases(
     totals: dict[str, list[int]] = {}
 
     for case in cases:
-        prompt = format_case_prompt(case, prompt_mode)
+        prompt = format_case_prompt(case, prompt_mode, prompt_contract)
         for decoding, seed in runs:
             if seed is not None:
                 torch.manual_seed(seed)
@@ -117,7 +120,7 @@ def evaluate_freeform_cases(
                 tokenizer,
                 prompt,
                 sampling=sampling,
-                stop_strings=stop_strings_for_mode(prompt_mode),
+                stop_strings=stop_strings_for_mode(prompt_mode, prompt_contract),
             )
             scores = score_generated_answer(result.text, case.answers)
             key = f"{decoding}:{case.category}"
