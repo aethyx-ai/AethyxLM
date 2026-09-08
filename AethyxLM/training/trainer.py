@@ -595,10 +595,17 @@ class Trainer:
 
     def load_checkpoint(self, path: str):
         """Load model checkpoint with full state restoration."""
-        if self.is_xla and self.rank:
-            # Loading eight complete CUDA checkpoints concurrently exceeds the
-            # Kaggle TPU VM's host RAM. Serialize their peak CPU allocations.
-            time.sleep(60 * self.rank)
+        xla_load_lock = None
+        if self.is_xla:
+            # A timed rank stagger is not sufficient when a large checkpoint
+            # takes longer than the stagger interval. Use an OS file lock so
+            # only one TPU worker holds the full CPU checkpoint during restore.
+            import fcntl
+
+            xla_load_lock = open(
+                "/tmp/aethyxlm-checkpoint-load.lock", "w", encoding="utf-8"
+            )
+            fcntl.flock(xla_load_lock.fileno(), fcntl.LOCK_EX)
         # Stage the serialized state on system RAM first. Loading a complete
         # optimizer checkpoint directly onto CUDA creates an avoidable VRAM
         # spike, which is especially costly on 6 GB laptop GPUs.
@@ -638,8 +645,20 @@ class Trainer:
         if "rng_state" in checkpoint:
             import random
             import numpy as np
-            random.setstate(checkpoint["rng_state"]["python"])
-            np.random.set_state(checkpoint["rng_state"]["numpy"])
+
+            def _tuple_tree(value):
+                return tuple(_tuple_tree(item) for item in value) if isinstance(value, list) else value
+
+            python_state = _tuple_tree(checkpoint["rng_state"]["python"])
+            random.setstate(python_state)
+
+            numpy_state = checkpoint["rng_state"]["numpy"]
+            if isinstance(numpy_state, list):
+                numpy_state = list(numpy_state)
+                if len(numpy_state) > 1 and isinstance(numpy_state[1], list):
+                    numpy_state[1] = np.asarray(numpy_state[1], dtype=np.uint32)
+                numpy_state = tuple(numpy_state)
+            np.random.set_state(numpy_state)
             # map_location may move this CPU RNG tensor onto CUDA.
             torch.set_rng_state(checkpoint["rng_state"]["torch"].cpu())
             if torch.cuda.is_available() and checkpoint["rng_state"]["cuda"]:
@@ -658,6 +677,11 @@ class Trainer:
             xm.mark_step()
         del checkpoint
         gc.collect()
+        if xla_load_lock is not None:
+            import fcntl
+
+            fcntl.flock(xla_load_lock.fileno(), fcntl.LOCK_UN)
+            xla_load_lock.close()
         
         print(f"Loaded checkpoint from step {self.step}")
         self._xla_rendezvous("checkpoint-loaded")
@@ -744,6 +768,13 @@ class Trainer:
                     microbatches_since_update += 1
 
                     if not will_update:
+                        if getattr(self, "is_xla", False):
+                            # Bound the lazy graph to one microbatch. Without a
+                            # step marker, XLA traces every accumulated
+                            # forward/backward into one very large compilation.
+                            import torch_xla.core.xla_model as xm
+
+                            xm.mark_step()
                         continue
 
                     self.optimizer_step()

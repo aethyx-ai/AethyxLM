@@ -221,9 +221,11 @@ def main():
     # Load config
     config = load_config(args.config)
     
-    # Set random seed for reproducibility
+    # Model replicas must begin with identical parameters. XLA v2/v3 workers
+    # can share processes/threads, so seed+rank before model construction is
+    # not sufficient; parameters are explicitly broadcast below.
     seed = config.get('seed', 42)
-    set_seed(seed + rank)  # Different seed per rank
+    set_seed(seed)
     if is_main_process:
         print(f"Random seed: {seed}")
     
@@ -264,12 +266,15 @@ def main():
     if is_main_process:
         save_run_config(config, resolve_project_path("logs"), git_hash)
     
-    # Load tokenizer first to get actual vocab size (only on rank 0)
+    # XLA workers need the vocabulary locally. CUDA DDP can broadcast the
+    # scalar, while XLA simply reads the same small tokenizer file per worker.
     if is_main_process:
         print("Loading tokenizer...")
+    if is_main_process or is_xla:
         tokenizer = AethyxTokenizer(tokenizer_path)
         actual_vocab_size = tokenizer.vocab_size
-        print(f"Tokenizer vocab size: {actual_vocab_size}")
+        if is_main_process:
+            print(f"Tokenizer vocab size: {actual_vocab_size}")
         configured_vocab = tokenizer_config.get('vocab_size')
         if configured_vocab is not None and configured_vocab != actual_vocab_size:
             raise ValueError(
@@ -293,6 +298,12 @@ def main():
     if is_xla:
         # XLA transfers do not preserve shared views reliably.
         model.lm_head.weight = model.token_embedding.weight
+        # PJRT TPU v2/v3 may initialize replicas from shared threads. Broadcast
+        # rank 0's parameters/buffers so every replica starts identically.
+        xm.broadcast_master_param(model)
+        # Dataset sharding already differs by rank; use rank-specific RNG only
+        # after the replicated model has been synchronized.
+        set_seed(seed + rank)
 
     if train_config.get('torch_compile', False):
         if is_xla:
@@ -583,7 +594,7 @@ def main():
         fused_optimizer=train_config.get('fused_optimizer', False),
         z_loss_coefficient=train_config.get('z_loss_coefficient', 0.0),
         context_schedule=train_config.get('context_schedule'),
-        tokenizer_sha256=(tokenizer.sha256 if is_main_process else None),
+        tokenizer_sha256=(tokenizer.sha256 if (is_main_process or is_xla) else None),
         eval_batches=train_config.get('eval_batches'),
         tokenizer_path=str(tokenizer_path),
         checkpoint_dir=str(checkpoint_dir),
