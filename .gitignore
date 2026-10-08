@@ -55,3 +55,6 @@ Experiments/
 build_*_pitch_pdf.py
 *.inspect.ndjson
 .codex-tmp/
+
+# Private business documents
+/Business/
